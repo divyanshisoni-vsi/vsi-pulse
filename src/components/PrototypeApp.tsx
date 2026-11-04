@@ -39,6 +39,7 @@ export type Employee = {
   email: string;
   team: string;
   role: string;
+  accessRole?: "Admin" | "Employee";
   target: number;
   done: number;
   status: string;
@@ -502,11 +503,26 @@ export default function PrototypeApp({ initialUser }: Props) {
                     />
                   </div>
                   <div>
-                    <label>Designation / Role</label>
-                    <input name="role" defaultValue={old.role || ""} required />
+                    <label>Designation / Job Title</label>
+                    <input
+                      name="role"
+                      placeholder="e.g. Operations Lead, QA Specialist"
+                      defaultValue={old.role || ""}
+                      required
+                    />
                   </div>
                   <div>
-                    <label>Assigned Team</label>
+                    <label>System Access Level</label>
+                    <select
+                      name="accessRole"
+                      defaultValue={old.accessRole || "Employee"}
+                    >
+                      <option value="Employee">Employee (Personal Dashboard)</option>
+                      <option value="Admin">Admin (Manager & Oversight)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Assigned Department</label>
                     <select name="team" defaultValue={old.team || "Operations"}>
                       <option value="Operations">Operations</option>
                       <option value="Quality">Quality</option>
@@ -540,6 +556,19 @@ export default function PrototypeApp({ initialUser }: Props) {
                       defaultValue={old.done ?? 0}
                       min="0"
                       required
+                    />
+                  </div>
+                  <div>
+                    <label>
+                      {id
+                        ? "Reset Password (leave empty to keep current)"
+                        : "Initial Login Password"}
+                    </label>
+                    <input
+                      name="password"
+                      type="text"
+                      placeholder={id ? "Unchanged" : "e.g. VSI@2026"}
+                      defaultValue={id ? "" : "VSI@2026"}
                     />
                   </div>
                 </>
@@ -1638,7 +1667,8 @@ export default function PrototypeApp({ initialUser }: Props) {
                         <tr>
                           <th>Name & Email</th>
                           <th>Department</th>
-                          <th>Role</th>
+                          <th>Designation</th>
+                          <th>System Role</th>
                           <th>Monthly Target</th>
                           <th>Achieved</th>
                           <th>Progress</th>
@@ -1652,6 +1682,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                           (e) => e.email,
                           (e) => e.team,
                           (e) => e.role,
+                          (e) => e.accessRole,
                         ]).map((e) => {
                           const sc = score(e);
                           return (
@@ -1666,6 +1697,15 @@ export default function PrototypeApp({ initialUser }: Props) {
                               </td>
                               <td>{e.team}</td>
                               <td style={{ color: "#334155" }}>{e.role}</td>
+                              <td>
+                                <span
+                                  className={`status-pill ${
+                                    e.accessRole === "Admin" ? "present" : "half-day"
+                                  }`}
+                                >
+                                  {e.accessRole === "Admin" ? "Admin (Manager)" : "Employee"}
+                                </span>
+                              </td>
                               <td>{e.target} units</td>
                               <td style={{ fontWeight: 600 }}>{e.done} units</td>
                               <td style={{ width: "130px" }}>

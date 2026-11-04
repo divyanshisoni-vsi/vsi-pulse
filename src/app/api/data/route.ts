@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import bcrypt from "bcryptjs";
 
 export async function GET() {
   try {
@@ -8,7 +9,6 @@ export async function GET() {
 
     const [users, dailyLogs, attendanceRecords, kpis, alerts, auditLogs] = await Promise.all([
       prisma.user.findMany({
-        where: { role: { not: "admin" } },
         include: {
           team: { select: { name: true } },
           dailyLogs: {
@@ -41,12 +41,16 @@ export async function GET() {
 
     const employees = users.map((u) => {
       const verifiedDone = u.dailyLogs.reduce((acc, l) => acc + Number(l.quantity ?? 0), 0);
+      const accessRole =
+        u.role === "admin" || (u.role as string) === "manager" ? "Admin" : "Employee";
+
       return {
         id: u.id,
         name: u.name,
         email: u.email,
         team: u.team?.name || "Operations",
         role: u.jobTitle || "Team Member",
+        accessRole,
         target: u.monthlyTarget,
         done: verifiedDone,
         status: u.status === "active" ? "Active" : "Inactive",
@@ -65,7 +69,7 @@ export async function GET() {
           : l.status === "needs_clarification"
           ? "Needs clarification"
           : "Pending",
-      source: l.source || "Slack report",
+      source: l.source || "Web Portal",
     }));
 
     const attendance = attendanceRecords.map((a) => ({
@@ -106,7 +110,6 @@ export async function GET() {
       kpis: kpiList,
       alerts: alertList,
       audit: auditList,
-      sessionUser: session?.user || null,
     });
   } catch (err: any) {
     console.error("GET /api/data error:", err);
@@ -157,30 +160,36 @@ export async function POST(req: NextRequest) {
         if (!team) {
           team = await prisma.team.create({ data: { name: record.team } });
         }
+
+        // Map selected access role: Admin (Manager) vs Employee
+        const assignedRole = record.accessRole === "Admin" ? "admin" : "employee";
+
+        const userData: any = {
+          name: record.name,
+          email: record.email.toLowerCase().trim(),
+          jobTitle: record.role,
+          role: assignedRole,
+          teamId: team.id,
+          monthlyTarget: Number(record.target) || 0,
+          status: record.status === "Inactive" ? "inactive" : "active",
+        };
+
         if (id) {
+          if (record.password && record.password.trim().length > 0) {
+            userData.passwordHash = await bcrypt.hash(record.password.trim(), 12);
+          }
           await prisma.user.update({
             where: { id },
-            data: {
-              name: record.name,
-              email: record.email.toLowerCase().trim(),
-              jobTitle: record.role,
-              teamId: team.id,
-              monthlyTarget: Number(record.target) || 0,
-              status: record.status === "Inactive" ? "inactive" : "active",
-            },
+            data: userData,
           });
         } else {
+          const rawPassword = record.password && record.password.trim().length > 0
+            ? record.password.trim()
+            : "VSI@2026";
+          userData.passwordHash = await bcrypt.hash(rawPassword, 12);
+
           await prisma.user.create({
-            data: {
-              name: record.name,
-              email: record.email.toLowerCase().trim(),
-              passwordHash: "$2a$12$dummyHashValueForDemoEmployees123456789",
-              jobTitle: record.role,
-              teamId: team.id,
-              monthlyTarget: Number(record.target) || 0,
-              status: record.status === "Inactive" ? "inactive" : "active",
-              role: "employee",
-            },
+            data: userData,
           });
         }
       } else if (type === "kpis") {
@@ -207,15 +216,20 @@ export async function POST(req: NextRequest) {
           });
         }
       } else if (type === "attendance") {
-        const attStatus: any = (record.status || "present").toLowerCase();
+        const statusMap: any = {
+          Present: "present",
+          Leave: "leave",
+          Absent: "absent",
+          "Half day": "half_day",
+        };
         if (id) {
           await prisma.attendance.update({
             where: { id },
             data: {
               date: new Date(record.date),
               userId: Number(record.employeeId),
-              hoursWorked: Number(record.hours) || 0,
-              status: attStatus,
+              hoursWorked: Number(record.hours) || 8,
+              status: statusMap[record.status] || "present",
             },
           });
         } else {
@@ -223,21 +237,19 @@ export async function POST(req: NextRequest) {
             data: {
               date: new Date(record.date || new Date()),
               userId: Number(record.employeeId),
-              hoursWorked: Number(record.hours) || 0,
-              status: attStatus,
-              source: "Manual",
+              hoursWorked: Number(record.hours) || 8,
+              status: statusMap[record.status] || "present",
             },
           });
         }
       } else if (type === "alerts") {
-        const alertStatus: any = (record.status || "open").toLowerCase();
         if (id) {
           await prisma.alert.update({
             where: { id },
             data: {
               type: record.type,
               message: record.text,
-              status: alertStatus,
+              status: record.status.toLowerCase(),
             },
           });
         } else {
@@ -245,61 +257,79 @@ export async function POST(req: NextRequest) {
             data: {
               type: record.type,
               message: record.text,
-              status: alertStatus,
+              status: record.status.toLowerCase(),
             },
           });
         }
       }
 
-      await prisma.auditLog.create({
-        data: {
-          actorEmail,
-          action: id ? `Updated ${type}` : `Added ${type}`,
-          details: record,
-        },
-      });
+      // Record audit log
+      try {
+        await prisma.auditLog.create({
+          data: {
+            actorEmail,
+            action: id ? `Updated ${type}` : `Added ${type}`,
+            entityType: type,
+            entityId: id || undefined,
+            details: record as any,
+          },
+        });
+      } catch (auditErr) {
+        console.error("Audit log error:", auditErr);
+      }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ success: true });
     }
 
     if (action === "removeRecord") {
       if (type === "logs") await prisma.dailyLog.delete({ where: { id } });
-      else if (type === "employees") await prisma.user.delete({ where: { id } });
-      else if (type === "kpis") await prisma.kpiStandard.delete({ where: { id } });
-      else if (type === "attendance") await prisma.attendance.delete({ where: { id } });
-      else if (type === "alerts") await prisma.alert.delete({ where: { id } });
+      if (type === "employees") await prisma.user.delete({ where: { id } });
+      if (type === "kpis") await prisma.kpiStandard.delete({ where: { id } });
+      if (type === "attendance") await prisma.attendance.delete({ where: { id } });
+      if (type === "alerts") await prisma.alert.delete({ where: { id } });
 
-      await prisma.auditLog.create({
-        data: {
-          actorEmail,
-          action: `Deleted ${type}`,
-          details: { id },
-        },
-      });
+      try {
+        await prisma.auditLog.create({
+          data: {
+            actorEmail,
+            action: `Deleted ${type}`,
+            entityType: type,
+            entityId: id,
+          },
+        });
+      } catch (auditErr) {
+        console.error("Audit log error:", auditErr);
+      }
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ success: true });
     }
 
     if (action === "toggleAlert") {
-      const existing = await prisma.alert.findUnique({ where: { id } });
-      if (existing) {
-        const nextStatus = existing.status === "open" ? "resolved" : "open";
+      const alert = await prisma.alert.findUnique({ where: { id } });
+      if (alert) {
+        const nextStatus = alert.status === "open" ? "resolved" : "open";
         await prisma.alert.update({
           where: { id },
           data: { status: nextStatus },
         });
-        await prisma.auditLog.create({
-          data: {
-            actorEmail,
-            action: `Toggled alert to ${nextStatus}`,
-            details: { id, nextStatus },
-          },
-        });
+
+        try {
+          await prisma.auditLog.create({
+            data: {
+              actorEmail,
+              action: `Alert marked as ${nextStatus}`,
+              entityType: "alert",
+              entityId: id,
+            },
+          });
+        } catch (auditErr) {
+          console.error("Audit log error:", auditErr);
+        }
       }
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (err: any) {
     console.error("POST /api/data error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
