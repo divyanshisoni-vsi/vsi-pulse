@@ -1,6 +1,8 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
+export const instant = false;
+
 export default async function DashboardLayout({
   children,
 }: {

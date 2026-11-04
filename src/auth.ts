@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(1),
 });
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -19,9 +19,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
 
         const { email, password } = parsed.data;
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Strict domain restriction: Only @virtualsolutionsindia.com permitted
+        if (!normalizedEmail.endsWith("@virtualsolutionsindia.com")) {
+          return null;
+        }
 
         const user = await prisma.user.findUnique({
-          where: { email: email.toLowerCase() },
+          where: { email: normalizedEmail },
           include: { team: { select: { name: true } } },
         });
 
@@ -30,11 +36,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
+        // Exactly 2 roles: Admin (which is manager/admin) and Employee
+        const effectiveRole =
+          user.role === "admin" || (user.role as string) === "manager"
+            ? "admin"
+            : "employee";
+
         return {
           id: String(user.id),
           name: user.name,
           email: user.email,
-          role: user.role,
+          role: effectiveRole,
           teamId: user.teamId ? String(user.teamId) : null,
           teamName: user.team?.name ?? null,
         };
