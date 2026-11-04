@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  admin
+  manager
+  employee
+}
+
+enum LogStatus {
+  verified
+  needs_clarification
+  pending
+  rejected
+}
+
+enum AttendanceStatus {
+  present
+  leave
+  absent
+  half_day
+}
+
+enum AlertStatus {
+  open
+  resolved
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+model Team {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
+  description  String?
+  createdAt    DateTime       @default(now()) @map("created_at")
+  users        User[]
+  kpiStandards KpiStandard[]
+
+  @@map("teams")
+}
+
+model User {
+  id             Int        @id @default(autoincrement())
+  name           String
+  email          String     @unique
+  passwordHash   String     @map("password_hash")
+  role           UserRole   @default(employee)
+  status         UserStatus @default(active)
+  teamId         Int?       @map("team_id")
+  jobTitle       String?    @map("job_title")
+  monthlyTarget  Int        @default(0) @map("monthly_target")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  team              Team?       @relation(fields: [teamId], references: [id])
+  dailyLogs         DailyLog[]  @relation("UserLogs")
+  verifiedLogs      DailyLog[]  @relation("VerifiedLogs")
+  attendance        Attendance[]
+  relatedAlerts     Alert[]     @relation("RelatedUser")
+  resolvedAlerts    Alert[]     @relation("ResolvedBy")
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model KpiStandard {
+  id            Int      @id @default(autoincrement())
+  teamId        Int      @map("team_id")
+  name          String
+  description   String?
+  targetValue   Decimal  @map("target_value")
+  unit          String   @default("units")
+  weightPercent Int      @default(100) @map("weight_percent")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("kpi_standards")
+}
+
+model DailyLog {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @map("user_id")
+  logDate        DateTime  @default(now()) @map("log_date") @db.Date
+  activity       String
+  quantity       Decimal?
+  status         LogStatus @default(pending)
+  source         String    @default("manual")
+  slackMessageTs String?   @map("slack_message_ts")
+  slackChannel   String?   @map("slack_channel")
+  rawSlackText   String?   @map("raw_slack_text")
+  verifiedBy     Int?      @map("verified_by")
+  verifiedAt     DateTime? @map("verified_at")
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user       User    @relation("UserLogs", fields: [userId], references: [id], onDelete: Cascade)
+  verifier   User?   @relation("VerifiedLogs", fields: [verifiedBy], references: [id])
+  alerts     Alert[]
+
+  @@map("daily_logs")
+}
+
+model Attendance {
+  id           Int              @id @default(autoincrement())
+  userId       Int              @map("user_id")
+  date         DateTime         @db.Date
+  hoursWorked  Decimal          @default(0) @map("hours_worked") @db.Decimal(5, 2)
+  status       AttendanceStatus @default(present)
+  source       String           @default("manual")
+  notes        String?
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("attendance")
+}
+
+model Alert {
+  id            Int         @id @default(autoincrement())
+  type          String
+  message       String
+  status        AlertStatus @default(open)
+  relatedUserId Int?        @map("related_user_id")
+  relatedLogId  Int?        @map("related_log_id")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  resolvedAt    DateTime?   @map("resolved_at")
+  resolvedById  Int?        @map("resolved_by")
+
+  relatedUser User?     @relation("RelatedUser", fields: [relatedUserId], references: [id])
+  resolvedBy  User?     @relation("ResolvedBy", fields: [resolvedById], references: [id])
+  relatedLog  DailyLog? @relation(fields: [relatedLogId], references: [id])
+
+  @@map("alerts")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?     @map("actor_id")
+  actorEmail String   @map("actor_email")
+  action     String
+  entityType String?  @map("entity_type")
+  entityId   Int?     @map("entity_id")
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@map("audit_logs")
+}
