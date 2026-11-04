@@ -897,41 +897,338 @@ button {
   transition: width 0.3s ease;
 }
 
-/* Certificate Preview Modal */
-.cert-preview-card {
-  border: 8px double #d4af37;
-  padding: 48px 36px;
-  text-align: center;
-  background: #ffffff;
+/* ==========================================================================
+   CLASSIC & PRESTIGIOUS PERFORMANCE CERTIFICATE
+   ========================================================================== */
+.classic-certificate {
+  position: relative;
+  background: radial-gradient(circle at 50% 50%, #ffffff 0%, #faf7f0 75%, #f5efe2 100%);
   color: #1e293b;
+  padding: 16px;
   border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  font-family: "Georgia", "Times New Roman", serif;
+  overflow: hidden;
 }
 
-.cert-brand {
-  font-size: 11px;
+.cert-outer-frame {
+  border: 3px solid #b8860b;
+  padding: 8px;
+  position: relative;
+  background: transparent;
+}
+
+.cert-inner-frame {
+  border: 2px solid #d4af37;
+  padding: 36px 32px 28px;
+  position: relative;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* Antique Corner Filigrees */
+.cert-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-color: #996515;
+  pointer-events: none;
+}
+.cert-corner.top-left {
+  top: 4px;
+  left: 4px;
+  border-top: 3px double #b8860b;
+  border-left: 3px double #b8860b;
+}
+.cert-corner.top-right {
+  top: 4px;
+  right: 4px;
+  border-top: 3px double #b8860b;
+  border-right: 3px double #b8860b;
+}
+.cert-corner.bottom-left {
+  bottom: 4px;
+  left: 4px;
+  border-bottom: 3px double #b8860b;
+  border-left: 3px double #b8860b;
+}
+.cert-corner.bottom-right {
+  bottom: 4px;
+  right: 4px;
+  border-bottom: 3px double #b8860b;
+  border-right: 3px double #b8860b;
+}
+
+/* Watermark Crest */
+.cert-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 150px;
+  font-weight: 900;
+  color: rgba(184, 134, 11, 0.035);
+  letter-spacing: 12px;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+
+.cert-content-layer {
+  position: relative;
+  z-index: 2;
+}
+
+/* Header */
+.cert-header {
+  margin-bottom: 20px;
+}
+
+.cert-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.cert-brand-line {
+  height: 1px;
+  width: 50px;
+  background: linear-gradient(90deg, transparent, #b8860b, transparent);
+}
+
+.cert-brand-title {
+  font-size: 12px;
   font-weight: 800;
+  letter-spacing: 3.5px;
+  color: #785208;
+  text-transform: uppercase;
+}
+
+.cert-system-tag {
+  font-size: 10px;
   letter-spacing: 2px;
-  color: #475569;
-  margin-bottom: 8px;
+  color: #78716c;
+  text-transform: uppercase;
+  margin-bottom: 12px;
 }
 
-.cert-headline {
-  font-family: Georgia, serif;
-  font-size: 26px;
+.cert-headline-title {
+  font-size: 28px;
   font-weight: 700;
-  color: #1e3a8a;
-  margin: 0 0 16px 0;
+  color: #0b1a30;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px 0;
+  text-transform: uppercase;
 }
 
-.cert-recipient {
-  font-family: Georgia, serif;
-  font-size: 32px;
+.cert-flourish-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #b8860b;
+  font-size: 14px;
+  margin: 4px 0 14px 0;
+}
+
+/* Presentation & Recipient */
+.cert-presentation-text {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #57534e;
+  text-transform: uppercase;
+  margin: 0 0 10px 0;
+  font-weight: 600;
+}
+
+.cert-recipient-hero {
+  font-family: "Georgia", serif;
+  font-style: italic;
+  font-size: 34px;
   font-weight: 700;
-  color: #0f172a;
-  margin: 16px 0;
-  border-bottom: 1px solid #e2e8f0;
+  color: #0a192f;
+  margin: 6px auto 14px;
   display: inline-block;
-  padding: 0 24px 6px;
+  padding: 0 32px 6px;
+  border-bottom: 2px solid #b8860b;
+  letter-spacing: 0.5px;
+}
+
+.cert-citation-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #44403c;
+  max-width: 520px;
+  margin: 0 auto 18px;
+}
+
+.cert-citation-body strong {
+  color: #0f172a;
+}
+
+/* KPI Plaque */
+.cert-kpi-plaque {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  background: #fdfcf9;
+  border: 1px solid #e7d8b5;
+  border-radius: 4px;
+  padding: 8px 18px;
+  margin-bottom: 28px;
+  box-shadow: inset 0 1px 2px rgba(184, 134, 11, 0.05);
+}
+
+.plaque-item {
+  font-size: 12px;
+  color: #57534e;
+}
+
+.plaque-item strong {
+  color: #785208;
+  font-size: 13px;
+}
+
+.plaque-dot {
+  color: #d4af37;
+  font-size: 10px;
+}
+
+/* Footer: Signatures and Official Gold Seal */
+.cert-footer-layout {
+  display: grid;
+  grid-template-columns: 1fr 140px 1fr;
+  align-items: flex-end;
+  gap: 16px;
+  padding-top: 10px;
+}
+
+.sig-column {
+  text-align: center;
+  padding: 0 10px;
+}
+
+.sig-script-sign {
+  font-family: "Brush Script MT", "Segoe Script", cursive, serif;
+  font-size: 24px;
+  color: #1e3a8a;
+  min-height: 32px;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.sig-rule-line {
+  height: 1px;
+  background: #a8a29e;
+  width: 100%;
+  margin: 0 auto 6px;
+}
+
+.sig-title-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #1c1917;
+  text-transform: uppercase;
+}
+
+.sig-org-label {
+  font-size: 9px;
+  color: #78716c;
+}
+
+/* Gold Metallic Medallion Seal */
+.seal-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.gold-medallion {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #fff6cc 0%, #d4af37 45%, #aa771c 80%, #664608 100%);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15), inset 0 0 0 3px #f7e7a8, inset 0 0 0 5px #7e560a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 3;
+}
+
+.medallion-inner {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.medallion-stars {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #ffffff;
+}
+
+.medallion-text {
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  letter-spacing: 1px;
+  margin: 2px 0;
+}
+
+.medallion-seal-tag {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fff6cc;
+}
+
+.seal-ribbon-tail {
+  position: absolute;
+  top: 60px;
+  width: 14px;
+  height: 28px;
+  background: #1e3a8a;
+  z-index: 1;
+}
+
+.seal-ribbon-tail.left {
+  left: 28px;
+  transform: rotate(-15deg);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+}
+
+.seal-ribbon-tail.right {
+  right: 28px;
+  transform: rotate(15deg);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+}
+
+/* Certificate Meta Footnote */
+.cert-meta-footnote {
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px dotted #d6d3d1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 10px;
+  color: #a8a29e;
+  letter-spacing: 0.5px;
 }
 
 /* Modals */

@@ -322,36 +322,125 @@ export default function PrototypeApp({ initialUser }: Props) {
   const showCertificate = (id: number, winner: boolean) => {
     const e = person(id);
     if (!e) return;
-    const scoreline = winner
-      ? "Recognized for outstanding contributions and leading monthly benchmarks."
-      : `Verified KPI Achievement: ${score(e)}%`;
+    const certDate = new Date().toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
 
     openModal(
-      <div className="modal-dialog" style={{ maxWidth: "620px" }}>
+      <div className="modal-dialog" style={{ maxWidth: "820px" }}>
         <div className="modal-head">
-          <h2>Performance Certificate</h2>
+          <h2>Official Performance Certificate</h2>
           <button className="modal-close-btn" onClick={closeModal}>
             <X size={18} />
           </button>
         </div>
-        <div className="modal-content">
-          <div className="cert-preview-card" id="certificate-print-area">
-            <div className="cert-brand">VIRTUAL SOLUTIONS INDIA</div>
-            <h2 className="cert-headline">
-              {winner ? "Certificate of Excellence" : "Performance Certificate"}
-            </h2>
-            <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
-              This honor is proudly awarded to
-            </p>
-            <div className="cert-recipient">{e.name}</div>
-            <p style={{ fontSize: "14px", color: "#334155", maxWidth: "440px", margin: "0 auto" }}>
-              {scoreline}
-            </p>
-            <div style={{ marginTop: "24px", fontSize: "12px", color: "#94a3b8" }}>
-              Verified Performance Record · VSI Pulse Portal
+        <div className="modal-content" style={{ padding: "16px 20px" }}>
+          <div className="classic-certificate" id="certificate-print-area">
+            <div className="cert-outer-frame">
+              {/* Corner filigrees */}
+              <div className="cert-corner top-left"></div>
+              <div className="cert-corner top-right"></div>
+              <div className="cert-corner bottom-left"></div>
+              <div className="cert-corner bottom-right"></div>
+
+              <div className="cert-inner-frame">
+                <div className="cert-watermark">VSI</div>
+
+                <div className="cert-content-layer">
+                  {/* Header */}
+                  <div className="cert-header">
+                    <div className="cert-brand-row">
+                      <div className="cert-brand-line"></div>
+                      <span className="cert-brand-title">VIRTUAL SOLUTIONS INDIA</span>
+                      <div className="cert-brand-line"></div>
+                    </div>
+                    <div className="cert-system-tag">
+                      Executive Performance & Quality Council · VSI Pulse
+                    </div>
+                    <h1 className="cert-headline-title">
+                      {winner ? "Certificate of Excellence" : "Certificate of Achievement"}
+                    </h1>
+                    <div className="cert-flourish-divider">
+                      <span>❧</span>
+                      <span>✦</span>
+                      <span>❖</span>
+                      <span>✦</span>
+                      <span>❧</span>
+                    </div>
+                  </div>
+
+                  {/* Body & Recipient */}
+                  <div className="cert-presentation-text">
+                    This is proudly and officially awarded to
+                  </div>
+                  <div className="cert-recipient-hero">{e.name}</div>
+                  <p className="cert-citation-body">
+                    In recognition of commendable diligence, professional commitment, and exemplary performance serving as{" "}
+                    <strong>{e.role}</strong> in the <strong>{e.team}</strong> Department during the official evaluation cycle.
+                  </p>
+
+                  {/* KPI Plaque */}
+                  <div className="cert-kpi-plaque">
+                    <div className="plaque-item">
+                      KPI Achievement: <strong>{score(e)}%</strong>
+                    </div>
+                    <span className="plaque-dot">•</span>
+                    <div className="plaque-item">
+                      Verified Output: <strong>{e.done} units</strong>
+                    </div>
+                    <span className="plaque-dot">•</span>
+                    <div className="plaque-item">
+                      Monthly Target: <strong>{e.target} units</strong>
+                    </div>
+                  </div>
+
+                  {/* Footer: Signatures & Gold Seal */}
+                  <div className="cert-footer-layout">
+                    {/* Left Signature */}
+                    <div className="sig-column">
+                      <div className="sig-script-sign">Rohith Kumar</div>
+                      <div className="sig-rule-line"></div>
+                      <div className="sig-title-label">Head of Operations</div>
+                      <div className="sig-org-label">Virtual Solutions India</div>
+                    </div>
+
+                    {/* Center Gold Seal */}
+                    <div className="seal-column">
+                      <div className="gold-medallion">
+                        <div className="medallion-inner">
+                          <div className="medallion-stars">★★★★★</div>
+                          <div className="medallion-text">OFFICIAL<br />SEAL</div>
+                          <div className="medallion-seal-tag">VSI PULSE</div>
+                        </div>
+                      </div>
+                      <div className="seal-ribbon-tail left"></div>
+                      <div className="seal-ribbon-tail right"></div>
+                    </div>
+
+                    {/* Right Signature */}
+                    <div className="sig-column">
+                      <div className="sig-script-sign">Executive Board</div>
+                      <div className="sig-rule-line"></div>
+                      <div className="sig-title-label">Director of Performance</div>
+                      <div className="sig-org-label">VSI Corporate Oversight</div>
+                    </div>
+                  </div>
+
+                  {/* Certificate Serial & Date */}
+                  <div className="cert-meta-footnote">
+                    <span>Certificate ID: VSI-PULSE-2026-00{e.id}</span>
+                    <span>•</span>
+                    <span>Issued: {certDate}</span>
+                    <span>•</span>
+                    <span>Digitally Verified Performance Record</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
         <div className="modal-actions">
           <button className="btn-secondary" onClick={closeModal}>
             Close
@@ -367,16 +456,125 @@ export default function PrototypeApp({ initialUser }: Props) {
                 return;
               }
               w.document.write(`
+                <!DOCTYPE html>
                 <html>
                   <head>
-                    <title>VSI Certificate - ${e.name}</title>
+                    <title>Certificate - ${e.name} - VSI Pulse</title>
                     <style>
-                      body { font-family: Georgia, serif; text-align: center; padding: 40px; background: #fafafa; }
-                      .cert-preview-card { border: 10px double #c59b27; padding: 60px 40px; background: #fff; max-width: 700px; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-                      .cert-brand { font-size: 13px; font-weight: bold; letter-spacing: 2px; color: #475569; margin-bottom: 12px; }
-                      .cert-headline { font-size: 32px; color: #1e3a8a; margin: 0 0 16px; }
-                      .cert-recipient { font-size: 36px; color: #0f172a; margin: 20px 0; border-bottom: 2px solid #e2e8f0; display: inline-block; padding: 0 30px 8px; }
-                      p { color: #475569; line-height: 1.6; }
+                      @page {
+                        size: A4 landscape;
+                        margin: 10mm;
+                      }
+                      * {
+                        box-sizing: border-box;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                      }
+                      body {
+                        font-family: "Georgia", "Times New Roman", serif;
+                        margin: 0;
+                        padding: 20px;
+                        background: #f4f4f4;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                      }
+                      .classic-certificate {
+                        width: 100%;
+                        max-width: 960px;
+                        background: radial-gradient(circle at 50% 50%, #ffffff 0%, #faf7f0 75%, #f5efe2 100%);
+                        color: #1e293b;
+                        padding: 18px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+                        position: relative;
+                      }
+                      .cert-outer-frame {
+                        border: 3.5px solid #b8860b;
+                        padding: 10px;
+                        position: relative;
+                      }
+                      .cert-inner-frame {
+                        border: 2px solid #d4af37;
+                        padding: 40px 40px 30px;
+                        position: relative;
+                        text-align: center;
+                        background: rgba(255, 255, 255, 0.7);
+                      }
+                      .cert-corner {
+                        position: absolute;
+                        width: 32px;
+                        height: 32px;
+                      }
+                      .cert-corner.top-left { top: 4px; left: 4px; border-top: 3px double #b8860b; border-left: 3px double #b8860b; }
+                      .cert-corner.top-right { top: 4px; right: 4px; border-top: 3px double #b8860b; border-right: 3px double #b8860b; }
+                      .cert-corner.bottom-left { bottom: 4px; left: 4px; border-bottom: 3px double #b8860b; border-left: 3px double #b8860b; }
+                      .cert-corner.bottom-right { bottom: 4px; right: 4px; border-bottom: 3px double #b8860b; border-right: 3px double #b8860b; }
+                      .cert-watermark {
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        font-size: 160px;
+                        font-weight: 900;
+                        color: rgba(184, 134, 11, 0.035);
+                        letter-spacing: 12px;
+                        pointer-events: none;
+                        user-select: none;
+                        z-index: 1;
+                      }
+                      .cert-content-layer { position: relative; z-index: 2; }
+                      .cert-brand-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 6px; }
+                      .cert-brand-line { height: 1px; width: 60px; background: #b8860b; }
+                      .cert-brand-title { font-size: 13px; font-weight: 800; letter-spacing: 4px; color: #785208; text-transform: uppercase; }
+                      .cert-system-tag { font-size: 10px; letter-spacing: 2px; color: #78716c; text-transform: uppercase; margin-bottom: 14px; }
+                      .cert-headline-title { font-size: 32px; font-weight: 700; color: #0b1a30; letter-spacing: 1px; margin: 0 0 8px 0; text-transform: uppercase; }
+                      .cert-flourish-divider { display: flex; align-items: center; justify-content: center; gap: 10px; color: #b8860b; font-size: 16px; margin: 6px 0 16px 0; }
+                      .cert-presentation-text { font-size: 11px; letter-spacing: 2.5px; color: #57534e; text-transform: uppercase; margin: 0 0 10px 0; font-weight: 600; }
+                      .cert-recipient-hero { font-family: "Georgia", serif; font-style: italic; font-size: 38px; font-weight: 700; color: #0a192f; margin: 8px auto 16px; display: inline-block; padding: 0 36px 8px; border-bottom: 2px solid #b8860b; }
+                      .cert-citation-body { font-size: 14px; line-height: 1.6; color: #44403c; max-width: 580px; margin: 0 auto 20px; }
+                      .cert-kpi-plaque { display: inline-flex; align-items: center; gap: 18px; background: #fdfcf9; border: 1px solid #e7d8b5; border-radius: 4px; padding: 10px 22px; margin-bottom: 30px; }
+                      .plaque-item { font-size: 13px; color: #57534e; }
+                      .plaque-item strong { color: #785208; font-size: 14px; }
+                      .plaque-dot { color: #d4af37; font-size: 10px; }
+                      .cert-footer-layout { display: grid; grid-template-columns: 1fr 150px 1fr; align-items: flex-end; gap: 20px; padding-top: 14px; }
+                      .sig-column { text-align: center; }
+                      .sig-script-sign { font-family: "Brush Script MT", "Segoe Script", cursive, serif; font-size: 28px; color: #1e3a8a; min-height: 36px; margin-bottom: 4px; }
+                      .sig-rule-line { height: 1px; background: #a8a29e; width: 100%; margin: 0 auto 6px; }
+                      .sig-title-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #1c1917; text-transform: uppercase; }
+                      .sig-org-label { font-size: 10px; color: #78716c; }
+                      .seal-column { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+                      .gold-medallion {
+                        width: 90px;
+                        height: 90px;
+                        border-radius: 50%;
+                        background: radial-gradient(circle at 30% 30%, #fff6cc 0%, #d4af37 45%, #aa771c 80%, #664608 100%);
+                        box-shadow: 0 4px 10px rgba(0,0,0,0.15), inset 0 0 0 3px #f7e7a8, inset 0 0 0 6px #7e560a;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        position: relative;
+                        z-index: 3;
+                      }
+                      .medallion-inner {
+                        width: 74px;
+                        height: 74px;
+                        border-radius: 50%;
+                        border: 1px dashed rgba(255,255,255,0.85);
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        color: #ffffff;
+                        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+                      }
+                      .medallion-stars { font-size: 9px; letter-spacing: 1.5px; color: #fff; }
+                      .medallion-text { font-size: 9px; font-weight: 800; line-height: 1.1; text-align: center; letter-spacing: 1px; margin: 2px 0; }
+                      .medallion-seal-tag { font-size: 8px; font-weight: 700; letter-spacing: 1px; color: #fff6cc; }
+                      .seal-ribbon-tail { position: absolute; top: 68px; width: 16px; height: 32px; background: #1e3a8a; z-index: 1; }
+                      .seal-ribbon-tail.left { left: 32px; transform: rotate(-15deg); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); }
+                      .seal-ribbon-tail.right { right: 32px; transform: rotate(15deg); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); }
+                      .cert-meta-footnote { margin-top: 26px; padding-top: 14px; border-top: 1px dotted #d6d3d1; display: flex; align-items: center; justify-content: center; gap: 16px; font-size: 11px; color: #a8a29e; }
                     </style>
                   </head>
                   <body>
