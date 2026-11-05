@@ -69,9 +69,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Send real email via Google SMTP / Resend
+      // Send real email via Google SMTP
+      let mailResult: any;
       try {
-        await sendRecoveryEmail({ to: normalizedEmail, code: generatedCode });
+        mailResult = await sendRecoveryEmail({ to: normalizedEmail, code: generatedCode });
       } catch (mailErr: any) {
         console.error("Failed to send email:", mailErr);
         return NextResponse.json(
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
             details: {
               info: "6-digit recovery code dispatched to inbox",
               expiresIn: "15 minutes",
+              messageId: mailResult?.messageId,
             },
           },
         });
@@ -102,6 +104,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         message: `A 6-digit verification code has been dispatched to ${normalizedEmail}.`,
+        provider: mailResult?.provider,
+        messageId: mailResult?.messageId,
+        buildVersion: "v1.2-smtp-enforced",
       });
     }
 
