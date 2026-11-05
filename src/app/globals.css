@@ -1373,3 +1373,127 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   DASHBOARD VIEW TOGGLE & LEAVE OVERVIEW STYLES
+   ========================================================= */
+.view-toggle-bar {
+  display: inline-flex;
+  align-items: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 22px;
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-toggle-btn:hover {
+  color: #0f172a;
+}
+
+.view-toggle-btn.active {
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.leave-card-blue {
+  border-top: 3px solid #3b82f6 !important;
+}
+
+.leave-card-emerald {
+  border-top: 3px solid #10b981 !important;
+}
+
+.leave-card-amber {
+  border-top: 3px solid #f59e0b !important;
+}
+
+.leave-card-purple {
+  border-top: 3px solid #8b5cf6 !important;
+}
+
+.leave-balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.leave-balance-row:last-child {
+  border-bottom: none;
+}
+
+.leave-cat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.leave-cat-casual {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.leave-cat-sick {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.leave-cat-earned {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.leave-cat-unpaid {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.leave-legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.leave-legend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #475569;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.leave-legend-item span.val {
+  font-weight: 700;
+  color: #0f172a;
+}
+

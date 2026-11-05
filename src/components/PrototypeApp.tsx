@@ -268,8 +268,15 @@ export default function PrototypeApp({ initialUser }: Props) {
 
   const isAdmin = userRole === "Admin";
 
+  // Dashboard View Switcher: Performance Overview vs Leave & Attendance Overview
+  const [dashboardView, setDashboardView] = useState<"performance" | "leave">("performance");
+
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
+  const leaveDoughnutRef = useRef<HTMLCanvasElement | null>(null);
+  const leaveDoughnutInstance = useRef<Chart | null>(null);
+  const leaveBarRef = useRef<HTMLCanvasElement | null>(null);
+  const leaveBarInstance = useRef<Chart | null>(null);
 
   // 7 Navigation Modules (exact prototype naming)
   const navigationItems = [
@@ -781,7 +788,7 @@ export default function PrototypeApp({ initialUser }: Props) {
 
   // Add / Edit Modal Builder
   const editRecordModal = (type: keyof AppDb, id?: number) => {
-    if (!isAdmin && type !== "logs") return;
+    if (!isAdmin && type !== "logs" && type !== "attendance") return;
     const old = (db[type] as any[]).find((r) => r.id === id) || {};
     const title =
       (id ? "Edit " : "New ") +
@@ -1066,7 +1073,11 @@ export default function PrototypeApp({ initialUser }: Props) {
                     <label>Team Member</label>
                     <select
                       name="employeeId"
-                      defaultValue={old.employeeId || db.employees[0]?.id}
+                      defaultValue={
+                        old.employeeId ||
+                        (!isAdmin ? sessionEmployeeId : db.employees[0]?.id)
+                      }
+                      disabled={!isAdmin}
                       required
                     >
                       {db.employees.length > 0 ? (
@@ -1079,6 +1090,13 @@ export default function PrototypeApp({ initialUser }: Props) {
                         <option value="1">Primary User</option>
                       )}
                     </select>
+                    {!isAdmin && (
+                      <input
+                        type="hidden"
+                        name="employeeId"
+                        value={sessionEmployeeId}
+                      />
+                    )}
                   </div>
                   <div>
                     <label>Hours Logged</label>
@@ -1175,9 +1193,30 @@ export default function PrototypeApp({ initialUser }: Props) {
     (e) => score(e) === topScoreValue && topScoreValue > 0
   );
 
+  // Leave & Attendance Analytics calculations
+  const userAttendanceRecords = visibleAttendance();
+  const fullLeaves = userAttendanceRecords.filter(
+    (a) => a.status.toLowerCase() === "leave"
+  ).length;
+  const halfLeaves = userAttendanceRecords.filter(
+    (a) => a.status.toLowerCase().includes("half")
+  ).length;
+  const totalLeavesTaken = fullLeaves + halfLeaves * 0.5;
+  const totalEntitlement = isAdmin ? es.length * 18 : 18;
+  const remainingBalance = Math.max(0, totalEntitlement - totalLeavesTaken);
+  const presentDays = userAttendanceRecords.filter(
+    (a) => a.status.toLowerCase() === "present"
+  ).length;
+  const totalLoggedDays = userAttendanceRecords.length;
+  const attendanceRate =
+    totalLoggedDays > 0
+      ? Math.round(((presentDays + halfLeaves * 0.5) / totalLoggedDays) * 100)
+      : 98;
+
   // Chart setup
   useEffect(() => {
-    if (currentTab === "Dashboard" && chartRef.current) {
+    // 1. Performance Overview Line Chart
+    if (currentTab === "Dashboard" && dashboardView === "performance" && chartRef.current) {
       if (chartInstance.current) {
         chartInstance.current.destroy();
       }
@@ -1240,13 +1279,142 @@ export default function PrototypeApp({ initialUser }: Props) {
       }
     }
 
+    // 2. Leave Category Doughnut Chart
+    if (currentTab === "Dashboard" && dashboardView === "leave" && leaveDoughnutRef.current) {
+      if (leaveDoughnutInstance.current) {
+        leaveDoughnutInstance.current.destroy();
+      }
+
+      const ctx = leaveDoughnutRef.current.getContext("2d");
+      if (ctx) {
+        leaveDoughnutInstance.current = new Chart(ctx, {
+          type: "doughnut",
+          data: {
+            labels: ["Casual Leave", "Sick & Medical", "Earned / Privilege", "Unpaid / Other"],
+            datasets: [
+              {
+                data: [8, 5, 4, 1],
+                backgroundColor: ["#3b82f6", "#f59e0b", "#10b981", "#ef4444"],
+                borderColor: "#ffffff",
+                borderWidth: 3,
+                hoverOffset: 6,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "65%",
+            plugins: {
+              legend: {
+                position: "bottom",
+                labels: {
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  usePointStyle: true,
+                  pointStyle: "circle",
+                  padding: 14,
+                  font: { size: 12, weight: "bold" },
+                  color: "#475569",
+                },
+              },
+              tooltip: {
+                backgroundColor: "#0f172a",
+                padding: 10,
+                cornerRadius: 6,
+                callbacks: {
+                  label: (context) => ` ${context.label}: ${context.raw} Days`,
+                },
+              },
+            },
+          },
+        });
+      }
+    }
+
+    // 3. Weekly Attendance vs Leave Bar Chart
+    if (currentTab === "Dashboard" && dashboardView === "leave" && leaveBarRef.current) {
+      if (leaveBarInstance.current) {
+        leaveBarInstance.current.destroy();
+      }
+
+      const ctx = leaveBarRef.current.getContext("2d");
+      if (ctx) {
+        leaveBarInstance.current = new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: ["Week 1", "Week 2", "Week 3", "Week 4", "Current"],
+            datasets: [
+              {
+                label: "Present Shifts",
+                data: [20, 22, 21, 23, 19],
+                backgroundColor: "#10b981",
+                borderRadius: 5,
+                borderSkipped: false,
+              },
+              {
+                label: "Absences / Leaves",
+                data: [2, 1, 3, 1, 2],
+                backgroundColor: "#f59e0b",
+                borderRadius: 5,
+                borderSkipped: false,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: "top",
+                align: "end",
+                labels: {
+                  boxWidth: 10,
+                  boxHeight: 10,
+                  usePointStyle: true,
+                  pointStyle: "circle",
+                  padding: 12,
+                  font: { size: 11, weight: "bold" },
+                  color: "#64748b",
+                },
+              },
+              tooltip: {
+                backgroundColor: "#0f172a",
+                padding: 10,
+                cornerRadius: 6,
+              },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                grid: { color: "#f1f5f9" },
+                ticks: { color: "#94a3b8", font: { size: 11 } },
+              },
+              x: {
+                grid: { display: false },
+                ticks: { color: "#94a3b8", font: { size: 11 } },
+              },
+            },
+          },
+        });
+      }
+    }
+
     return () => {
       if (chartInstance.current) {
         chartInstance.current.destroy();
         chartInstance.current = null;
       }
+      if (leaveDoughnutInstance.current) {
+        leaveDoughnutInstance.current.destroy();
+        leaveDoughnutInstance.current = null;
+      }
+      if (leaveBarInstance.current) {
+        leaveBarInstance.current.destroy();
+        leaveBarInstance.current = null;
+      }
     };
-  }, [currentTab, es.length, overallAvg]);
+  }, [currentTab, dashboardView, es.length, overallAvg, db.attendance.length]);
 
   return (
     <div className="app-shell">
@@ -1363,34 +1531,82 @@ export default function PrototypeApp({ initialUser }: Props) {
             <>
               <div className="module-header">
                 <div className="header-text">
-                  <h1>Executive Performance Overview</h1>
+                  <h1>
+                    {dashboardView === "performance"
+                      ? "Executive Performance Overview"
+                      : "Leave & Attendance Overview"}
+                  </h1>
                   <p>
-                    {isAdmin
-                      ? "Real-time key performance indicators and organizational health metrics."
-                      : "Your personal progress, completed deliverables, and performance benchmarks."}
+                    {dashboardView === "performance"
+                      ? isAdmin
+                        ? "Real-time key performance indicators and organizational health metrics."
+                        : "Your personal progress, completed deliverables, and performance benchmarks."
+                      : isAdmin
+                      ? "Real-time workforce attendance, leave balances, and category utilization."
+                      : "Your personal leave balances, entitlement utilization, and shift logs."}
                   </p>
                 </div>
                 <div className="header-actions">
-                  <button
-                    className="btn-secondary"
-                    onClick={() => editRecordModal("logs")}
-                  >
-                    <Plus size={15} />
-                    <span>Log Daily Activity</span>
-                  </button>
-                  {isAdmin && (
-                    <button
-                      className="btn-primary"
-                      onClick={() => editRecordModal("employees")}
-                    >
-                      <Plus size={15} />
-                      <span>Add Employee</span>
-                    </button>
+                  {dashboardView === "performance" ? (
+                    <>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => editRecordModal("logs")}
+                      >
+                        <Plus size={15} />
+                        <span>Log Daily Activity</span>
+                      </button>
+                      {isAdmin && (
+                        <button
+                          className="btn-primary"
+                          onClick={() => editRecordModal("employees")}
+                        >
+                          <Plus size={15} />
+                          <span>Add Employee</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn-primary"
+                        onClick={() => editRecordModal("attendance")}
+                      >
+                        <Plus size={15} />
+                        <span>Log Attendance / Leave</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
 
-              {/* Metric Cards Row */}
+              {/* View Toggle Switcher (Choice C) */}
+              <div className="view-toggle-bar">
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${
+                    dashboardView === "performance" ? "active" : ""
+                  }`}
+                  onClick={() => setDashboardView("performance")}
+                >
+                  <TrendingUp size={14} />
+                  <span>Performance Overview</span>
+                </button>
+                <button
+                  type="button"
+                  className={`view-toggle-btn ${
+                    dashboardView === "leave" ? "active" : ""
+                  }`}
+                  onClick={() => setDashboardView("leave")}
+                >
+                  <CalendarCheck size={14} />
+                  <span>Leave & Attendance Overview</span>
+                </button>
+              </div>
+
+              {dashboardView === "performance" ? (
+                <>
+                  {/* Metric Cards Row */}
               <div className="metrics-row">
                 <div className="metric-card">
                   <div className="metric-top">
@@ -1702,7 +1918,431 @@ export default function PrototypeApp({ initialUser }: Props) {
                 </div>
               </div>
             </>
+          ) : (
+            <>
+              {/* Leave & Attendance Metric Cards Row */}
+              <div className="metrics-row">
+                <div className="metric-card leave-card-blue">
+                  <div className="metric-top">
+                    <span className="metric-label">
+                      {isAdmin ? "Annual Leave Pool" : "Annual Leave Quota"}
+                    </span>
+                    <div
+                      className="metric-icon-wrap"
+                      style={{ color: "#3b82f6" }}
+                    >
+                      <CalendarCheck size={16} />
+                    </div>
+                  </div>
+                  <div className="metric-value">{totalEntitlement} Days</div>
+                  <div className="metric-sub">
+                    <span>
+                      {isAdmin
+                        ? `18 days / member across ${es.length} employees`
+                        : "18 days standard annual allocation"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="metric-card leave-card-amber">
+                  <div className="metric-top">
+                    <span className="metric-label">
+                      {isAdmin
+                        ? "Total Leaves Utilized"
+                        : "Leaves Taken This Year"}
+                    </span>
+                    <div
+                      className="metric-icon-wrap"
+                      style={{ color: "#f59e0b" }}
+                    >
+                      <Clock size={16} />
+                    </div>
+                  </div>
+                  <div className="metric-value">{totalLeavesTaken} Days</div>
+                  <div className="metric-sub">
+                    <span>
+                      {totalLeavesTaken === 0
+                        ? "Zero leaves recorded"
+                        : `${fullLeaves} full days, ${halfLeaves} half-day shifts`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="metric-card leave-card-emerald">
+                  <div className="metric-top">
+                    <span className="metric-label">
+                      {isAdmin
+                        ? "Company Net Balance"
+                        : "Remaining Leave Balance"}
+                    </span>
+                    <div
+                      className="metric-icon-wrap"
+                      style={{ color: "#10b981" }}
+                    >
+                      <CheckCircle2 size={16} />
+                    </div>
+                  </div>
+                  <div className="metric-value">{remainingBalance} Days</div>
+                  <div className="metric-sub">
+                    <span>Available for planned time off</span>
+                  </div>
+                </div>
+
+                <div className="metric-card leave-card-purple">
+                  <div className="metric-top">
+                    <span className="metric-label">
+                      {isAdmin
+                        ? "Workforce Attendance Rate"
+                        : "Personal Attendance Rate"}
+                    </span>
+                    <div
+                      className="metric-icon-wrap"
+                      style={{ color: "#8b5cf6" }}
+                    >
+                      <Activity size={16} />
+                    </div>
+                  </div>
+                  <div className="metric-value">{attendanceRate}%</div>
+                  <div className="metric-sub">
+                    <span>
+                      {attendanceRate >= 95
+                        ? "Exemplary punctuality"
+                        : "Active presence record"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Colorful Charts Row: Doughnut Category Distribution + Weekly Attendance Bar Chart */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.1fr 1fr",
+                  gap: "20px",
+                }}
+              >
+                {/* Doughnut Chart: Leave Distribution by Category */}
+                <div className="card-panel">
+                  <div className="card-header">
+                    <div className="card-title">
+                      <Layers size={16} />
+                      <span>Leave Distribution by Category</span>
+                    </div>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Year-to-Date
+                    </span>
+                  </div>
+                  <div className="card-body">
+                    <div
+                      className="chart-container"
+                      style={{ height: "230px" }}
+                    >
+                      <canvas ref={leaveDoughnutRef}></canvas>
+                    </div>
+                    <div className="leave-legend-grid">
+                      <div className="leave-legend-item">
+                        <span className="leave-cat-badge leave-cat-casual">
+                          Casual
+                        </span>
+                        <span className="val">8 Days (45%)</span>
+                      </div>
+                      <div className="leave-legend-item">
+                        <span className="leave-cat-badge leave-cat-sick">
+                          Sick & Medical
+                        </span>
+                        <span className="val">5 Days (28%)</span>
+                      </div>
+                      <div className="leave-legend-item">
+                        <span className="leave-cat-badge leave-cat-earned">
+                          Earned / Privilege
+                        </span>
+                        <span className="val">4 Days (22%)</span>
+                      </div>
+                      <div className="leave-legend-item">
+                        <span className="leave-cat-badge leave-cat-unpaid">
+                          Unpaid / Other
+                        </span>
+                        <span className="val">1 Day (5%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bar Chart: Weekly Presence vs Absence */}
+                <div className="card-panel">
+                  <div className="card-header">
+                    <div className="card-title">
+                      <Activity size={16} />
+                      <span>Weekly Shift vs Leave Ratio</span>
+                    </div>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Rolling 5-Week Cycle
+                    </span>
+                  </div>
+                  <div className="card-body">
+                    <div
+                      className="chart-container"
+                      style={{ height: "295px" }}
+                    >
+                      <canvas ref={leaveBarRef}></canvas>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Team Leave Balances & Quota Utilization */}
+              <div className="card-panel">
+                <div className="card-header">
+                  <div className="card-title">
+                    <Users size={16} />
+                    <span>Team Leave Balances & Quota Utilization</span>
+                  </div>
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={() => editRecordModal("attendance")}
+                  >
+                    <Plus size={13} />
+                    <span>Record Leave</span>
+                  </button>
+                </div>
+                <div className="card-body" style={{ padding: 0 }}>
+                  <div className="table-responsive">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Employee</th>
+                          <th>Department</th>
+                          <th>Annual Quota</th>
+                          <th>Leaves Taken</th>
+                          <th>Available Balance</th>
+                          <th>Quota Utilization</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {es.map((e) => {
+                          const empAtt = db.attendance.filter(
+                            (a) => a.employeeId === e.id
+                          );
+                          const empUsed =
+                            empAtt.filter(
+                              (a) => a.status.toLowerCase() === "leave"
+                            ).length +
+                            empAtt.filter((a) =>
+                              a.status.toLowerCase().includes("half")
+                            ).length *
+                              0.5;
+                          const empBal = Math.max(0, 18 - empUsed);
+                          const empPct = Math.min(
+                            100,
+                            Math.round((empUsed / 18) * 100)
+                          );
+
+                          return (
+                            <tr key={e.id}>
+                              <td>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "10px",
+                                  }}
+                                >
+                                  <div
+                                    className="avatar-badge"
+                                    style={{
+                                      width: "30px",
+                                      height: "30px",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    {e.name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div
+                                      style={{
+                                        fontWeight: 600,
+                                        color: "#0f172a",
+                                      }}
+                                    >
+                                      {e.name}
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "11px",
+                                        color: "#64748b",
+                                      }}
+                                    >
+                                      {e.email}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{e.team}</td>
+                              <td>18 Days</td>
+                              <td style={{ fontWeight: 600 }}>
+                                {empUsed} Days
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-pill ${
+                                    empBal > 8
+                                      ? "verified"
+                                      : empBal > 3
+                                      ? "pending"
+                                      : "needs-clarification"
+                                  }`}
+                                >
+                                  {empBal} Days Left
+                                </span>
+                              </td>
+                              <td style={{ minWidth: "150px" }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  <div
+                                    className="bar-track"
+                                    style={{ flex: 1 }}
+                                  >
+                                    <div
+                                      className="bar-fill"
+                                      style={{
+                                        width: `${empPct}%`,
+                                        background:
+                                          empPct >= 75
+                                            ? "#ef4444"
+                                            : empPct >= 40
+                                            ? "#f59e0b"
+                                            : "#10b981",
+                                      }}
+                                    ></div>
+                                  </div>
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#64748b",
+                                      width: "32px",
+                                    }}
+                                  >
+                                    {empPct}%
+                                  </span>
+                                </div>
+                              </td>
+                              <td>
+                                <button
+                                  className="btn-secondary btn-sm"
+                                  onClick={() => editRecordModal("attendance")}
+                                >
+                                  <Plus size={13} />
+                                  <span>Request</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Attendance & Leave Activity */}
+              <div className="card-panel">
+                <div className="card-header">
+                  <div className="card-title">
+                    <Clock size={16} />
+                    <span>Recent Attendance & Leave Activity</span>
+                  </div>
+                  <button
+                    className="btn-secondary btn-sm"
+                    onClick={() => setCurrentTab("Attendance & Leave")}
+                  >
+                    <span>View All Logs</span>
+                  </button>
+                </div>
+                <div className="card-body" style={{ padding: 0 }}>
+                  {userAttendanceRecords.length === 0 ? (
+                    <div className="empty-box">
+                      <CheckCircle2 size={32} style={{ color: "#10b981" }} />
+                      <div
+                        className="empty-title"
+                        style={{ marginTop: "10px", fontSize: "14px" }}
+                      >
+                        No Attendance Logs Found
+                      </div>
+                      <div className="empty-desc" style={{ fontSize: "12px" }}>
+                        Log daily presence, work hours, remote shifts, or leave
+                        requests.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Team Member</th>
+                            <th>Hours Logged</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {userAttendanceRecords.slice(0, 5).map((a) => {
+                            const m = person(a.employeeId);
+                            return (
+                              <tr key={a.id}>
+                                <td style={{ fontWeight: 600 }}>{a.date}</td>
+                                <td>{m ? m.name : `Emp #${a.employeeId}`}</td>
+                                <td>{a.hours} hrs</td>
+                                <td>
+                                  <span
+                                    className={`status-pill ${
+                                      a.status.toLowerCase() === "present"
+                                        ? "verified"
+                                        : a.status.toLowerCase() === "leave"
+                                        ? "pending"
+                                        : a.status
+                                            .toLowerCase()
+                                            .includes("half")
+                                        ? "needs-clarification"
+                                        : "rejected"
+                                    }`}
+                                  >
+                                    {a.status}
+                                  </span>
+                                </td>
+                                <td>
+                                  {(isAdmin ||
+                                    a.employeeId === sessionEmployeeId) && (
+                                    <button
+                                      className="btn-secondary btn-sm"
+                                      onClick={() =>
+                                        editRecordModal("attendance", a.id)
+                                      }
+                                    >
+                                      <Edit2 size={13} />
+                                      <span>Edit</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
           )}
+        </>
+      )}
 
           {/* =========================================================
               2. DAILY LOGS MODULE
