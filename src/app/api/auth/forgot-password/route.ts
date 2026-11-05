@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       } catch (mailErr: any) {
         console.error("Failed to send email:", mailErr);
         return NextResponse.json(
-          { error: "Failed to dispatch email. Please check email provider configuration." },
+          { error: mailErr?.message || "Failed to dispatch email. Please check email provider configuration." },
           { status: 500 }
         );
       }

@@ -116,7 +116,14 @@ export async function sendRecoveryEmail({
     }
   }
 
-  // 3. Fallback for Local Dev (logs to server terminal)
+  // 3. Fallback check for production vs development
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Missing email configuration on Vercel! Please add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and EMAIL_FROM to your Vercel Project Environment Variables."
+    );
+  }
+
+  // Fallback for Local Dev (logs to server terminal)
   console.warn(
     `[EMAIL SIMULATION] No RESEND_API_KEY or SMTP credentials configured yet in .env.\n` +
       `Simulated code dispatched to: ${to} -> CODE: [ ${code} ]`
