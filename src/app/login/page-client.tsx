@@ -110,8 +110,7 @@ export default function LoginPage() {
       if (!res.ok) {
         setForgotError(data.error || "Failed to generate security code.");
       } else {
-        setResetCode(data.code);
-        setForgotMsg("Security reset code generated successfully.");
+        setForgotMsg(`A verification code was dispatched to ${targetEmail}`);
         setForgotStep("code");
       }
     } catch {
@@ -359,37 +358,27 @@ export default function LoginPage() {
               {/* Step 2: Code Verification & New Password */}
               {forgotStep === "code" && (
                 <form onSubmit={handleVerifyReset} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                  {/* Security OTP Simulation Banner */}
+                  {/* Email Sent Notice */}
                   <div
                     style={{
                       background: "#eff6ff",
                       border: "1px solid #bfdbfe",
                       borderRadius: "6px",
-                      padding: "12px",
-                      textAlign: "center",
+                      padding: "14px 16px",
+                      textAlign: "left",
                     }}
                   >
-                    <div style={{ fontSize: "11px", color: "#1e40af", fontWeight: 600, textTransform: "uppercase" }}>
-                      Security Verification Code
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#1e40af", fontWeight: 700, fontSize: "12px" }}>
+                      <Mail size={16} />
+                      <span>Verification Code Emailed</span>
                     </div>
-                    <div
-                      style={{
-                        fontSize: "24px",
-                        fontWeight: 800,
-                        letterSpacing: "4px",
-                        color: "#0f172a",
-                        margin: "4px 0",
-                      }}
-                    >
-                      {resetCode}
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#3b82f6" }}>
-                      Valid for 15 minutes · Enter code below
+                    <div style={{ fontSize: "12px", color: "#3b82f6", marginTop: "4px", lineHeight: "1.5" }}>
+                      We have dispatched a 6-digit recovery code to <strong>{forgotEmail}</strong>. Please check your inbox (and spam folder) and enter it below.
                     </div>
                   </div>
 
                   <div className="form-group">
-                    <label>Enter 6-Digit Code</label>
+                    <label>Enter 6-Digit Code from Your Email</label>
                     <input
                       type="text"
                       required

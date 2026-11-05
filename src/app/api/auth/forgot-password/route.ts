@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { sendRecoveryEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 
-// Global in-memory store for verification codes (15-minute expiration)
+// In-memory store for verification codes (15-minute expiration)
 const resetCodeStore = new Map<string, { code: string; expiresAt: number }>();
 
 export async function POST(req: NextRequest) {
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 1: Request verification code
+    // Step 1: Request verification code and send real email
     if (action === "request-code") {
       const user = await prisma.user.findUnique({
         where: { email: normalizedEmail },
@@ -46,22 +47,33 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Generate 6-digit OTP code
+      // Generate 6-digit secure numeric code
       const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
       resetCodeStore.set(normalizedEmail, { code: generatedCode, expiresAt });
 
-      // Record audit log for security visibility
+      // Send real email via Resend or SMTP
+      try {
+        await sendRecoveryEmail({ to: normalizedEmail, code: generatedCode });
+      } catch (mailErr: any) {
+        console.error("Failed to send email:", mailErr);
+        return NextResponse.json(
+          { error: "Failed to dispatch email. Please check email provider configuration." },
+          { status: 500 }
+        );
+      }
+
+      // Record audit log
       try {
         await prisma.auditLog.create({
           data: {
             actorEmail: normalizedEmail,
-            action: "Password Reset Requested",
+            action: "Password Reset Code Emailed",
             entityType: "user",
             entityId: user.id,
             details: {
-              info: "Recovery verification code requested",
+              info: "6-digit recovery code dispatched to inbox",
               expiresIn: "15 minutes",
             },
           },
@@ -70,14 +82,14 @@ export async function POST(req: NextRequest) {
         console.error("Audit log error:", e);
       }
 
+      // NEVER send code in the response!
       return NextResponse.json({
         success: true,
-        message: "Security verification code generated.",
-        code: generatedCode, // Displayed on screen for instant verification
+        message: `A 6-digit verification code has been dispatched to ${normalizedEmail}.`,
       });
     }
 
-    // Step 2: Verify code and set new password
+    // Step 2: Verify code entered from email and reset password
     if (action === "verify-reset") {
       const stored = resetCodeStore.get(normalizedEmail);
 
@@ -90,7 +102,7 @@ export async function POST(req: NextRequest) {
 
       if (stored.code !== (code || "").trim()) {
         return NextResponse.json(
-          { error: "Invalid verification code. Please check and try again." },
+          { error: "Invalid verification code. Please check the code in your email and try again." },
           { status: 400 }
         );
       }
@@ -109,7 +121,7 @@ export async function POST(req: NextRequest) {
         data: { passwordHash: newHash },
       });
 
-      // Clear used code
+      // Invalidate used code
       resetCodeStore.delete(normalizedEmail);
 
       // Record audit event
@@ -120,7 +132,7 @@ export async function POST(req: NextRequest) {
             action: "Password Reset Completed",
             entityType: "user",
             entityId: updated.id,
-            details: { message: "Account password successfully reset via verification code." },
+            details: { message: "Account password successfully reset via email recovery code." },
           },
         });
       } catch (e) {
