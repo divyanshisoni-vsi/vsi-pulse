@@ -22,8 +22,8 @@ export default function LoginPage() {
 
   const domain = "@virtualsolutionsindia.com";
 
-  // Login Form States
-  const [email, setEmail] = useState("divyanshisoni@virtualsolutionsindia.com");
+  // Login Form States (clean, empty baseline)
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -202,7 +202,7 @@ export default function LoginPage() {
                   setEmail(e.target.value);
                   if (error) setError("");
                 }}
-                placeholder="name@virtualsolutionsindia.com"
+                placeholder="yourname@virtualsolutionsindia.com"
                 className={isInvalidDomain ? "input-warning" : ""}
               />
             </div>
@@ -324,7 +324,7 @@ export default function LoginPage() {
                         required
                         value={forgotEmail}
                         onChange={(e) => setForgotEmail(e.target.value)}
-                        placeholder="name@virtualsolutionsindia.com"
+                        placeholder="yourname@virtualsolutionsindia.com"
                       />
                     </div>
                   </div>
