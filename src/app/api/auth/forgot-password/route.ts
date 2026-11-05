@@ -49,18 +49,20 @@ export async function POST(req: NextRequest) {
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
       const codeHash = await bcrypt.hash(generatedCode, 10);
 
-      // Clean up previous tokens and persist to Postgres
+      // Clean up previous tokens and persist to Postgres in a single atomic transaction
       try {
-        await prisma.$executeRawUnsafe(
-          `DELETE FROM password_reset_tokens WHERE email = $1`,
-          normalizedEmail
-        );
-        await prisma.$executeRawUnsafe(
-          `INSERT INTO password_reset_tokens (email, code_hash, expires_at) VALUES ($1, $2, $3)`,
-          normalizedEmail,
-          codeHash,
-          expiresAt
-        );
+        await prisma.$transaction([
+          prisma.$executeRawUnsafe(
+            `DELETE FROM password_reset_tokens WHERE email = $1`,
+            normalizedEmail
+          ),
+          prisma.$executeRawUnsafe(
+            `INSERT INTO password_reset_tokens (email, code_hash, expires_at) VALUES ($1, $2, $3)`,
+            normalizedEmail,
+            codeHash,
+            expiresAt
+          ),
+        ]);
       } catch (dbErr) {
         console.error("DB error saving reset token:", dbErr);
         return NextResponse.json(
@@ -69,7 +71,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Send real email via Google SMTP
+      // Send real email via Google SMTP (fast delivery)
       let mailResult: any;
       try {
         mailResult = await sendRecoveryEmail({ to: normalizedEmail, code: generatedCode });
@@ -81,9 +83,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Record audit log
-      try {
-        await prisma.auditLog.create({
+      // Record audit log asynchronously without blocking HTTP response
+      prisma.auditLog
+        .create({
           data: {
             actorEmail: normalizedEmail,
             action: "Password Reset Code Emailed",
@@ -95,10 +97,8 @@ export async function POST(req: NextRequest) {
               messageId: mailResult?.messageId,
             },
           },
-        });
-      } catch (e) {
-        console.error("Audit log error:", e);
-      }
+        })
+        .catch((e) => console.error("Audit log error:", e));
 
       // NEVER send code in the response!
       return NextResponse.json({

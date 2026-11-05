@@ -1,5 +1,39 @@
 import nodemailer from "nodemailer";
 
+// Cached pooled transporter across serverless invocations for fast warm delivery
+let cachedTransporter: nodemailer.Transporter | null = null;
+
+function getTransporter() {
+  if (cachedTransporter) return cachedTransporter;
+
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    throw new Error(
+      "Missing Google SMTP settings on server! Please add SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS in your Vercel Project Environment Variables."
+    );
+  }
+
+  // Use port 465 for direct TLS (faster than STARTTLS handshake on 587)
+  const port = Number(process.env.SMTP_PORT) || 465;
+  const secure = port === 465;
+
+  cachedTransporter = nodemailer.createTransport({
+    pool: true,
+    host: process.env.SMTP_HOST,
+    port,
+    secure,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    maxConnections: 3,
+    maxMessages: 100,
+    rateDelta: 1000,
+    rateLimit: 5,
+  });
+
+  return cachedTransporter;
+}
+
 export async function sendRecoveryEmail({
   to,
   code,
@@ -8,6 +42,13 @@ export async function sendRecoveryEmail({
   code: string;
 }) {
   const subject = "VSI Pulse: Your 6-Digit Password Recovery Code";
+
+  const plainText = `VSI Pulse Account Password Recovery\n\n` +
+    `A password reset request was initiated for your official VSI account (${to}).\n\n` +
+    `Your 6-Digit Verification Code: ${code}\n\n` +
+    `This code is valid for 15 minutes only.\n` +
+    `If you did not request this recovery, please ignore this message.\n\n` +
+    `---\nVirtual Solutions India - VSI Pulse Security`;
 
   const html = `
     <!DOCTYPE html>
@@ -67,32 +108,23 @@ export async function sendRecoveryEmail({
     </html>
   `;
 
-  // Google Workspace SMTP (info@virtualsolutionsindia.com)
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    throw new Error(
-      "Missing Google SMTP settings on server! Please add SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS in your Vercel Project Environment Variables."
-    );
-  }
-
-  const port = Number(process.env.SMTP_PORT) || 587;
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: port === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
-
+  const transporter = getTransporter();
   const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
+
   const info = await transporter.sendMail({
     from: `"VSI Pulse Security" <${fromEmail}>`,
     to,
     subject,
+    text: plainText,
     html,
+    priority: "high",
+    headers: {
+      "X-Priority": "1",
+      "Importance": "high",
+      "X-MSMail-Priority": "High",
+    },
   });
 
-  console.log(`[Google SMTP] Email dispatched to ${to}. MessageId: ${info.messageId}`);
+  console.log(`[Google SMTP Fast Delivery] Dispatched to ${to}. ID: ${info.messageId}`);
   return { success: true, provider: "smtp", messageId: info.messageId };
 }
