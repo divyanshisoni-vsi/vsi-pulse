@@ -273,14 +273,14 @@ export default function PrototypeApp({ initialUser }: Props) {
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
 
-  // 7 Navigation Modules
+  // 7 Navigation Modules (exact prototype naming)
   const navigationItems = [
     { name: "Dashboard", icon: LayoutDashboard },
     { name: "Daily Logs", icon: ClipboardList },
-    { name: "KPI & Targets", icon: Target },
+    { name: "KPI & Performance", icon: Target },
     { name: "Employee Directory", icon: Users },
     { name: "Attendance & Leave", icon: CalendarCheck },
-    { name: "Leaderboard & Awards", icon: Award },
+    { name: "Leaderboard & Certificates", icon: Award },
     { name: "Reports & Audit", icon: FileText },
   ];
 
@@ -1645,8 +1645,14 @@ export default function PrototypeApp({ initialUser }: Props) {
                   <div className="card-header">
                     <div className="card-title">
                       <Award size={16} />
-                      <span>Leading Performers</span>
+                      <span>Top Performers</span>
                     </div>
+                    <button
+                      className="btn-secondary btn-sm"
+                      onClick={() => setCurrentTab("Leaderboard & Certificates")}
+                    >
+                      <span>View all</span>
+                    </button>
                   </div>
                   <div className="card-body" style={{ padding: 0 }}>
                     {topSortedEmployees.length === 0 ? (
@@ -1857,7 +1863,7 @@ export default function PrototypeApp({ initialUser }: Props) {
           {/* =========================================================
               3. KPI & PERFORMANCE STANDARDS
              ========================================================= */}
-          {currentTab === "KPI & Targets" && (
+          {currentTab === "KPI & Performance" && (
             <>
               <div className="module-header">
                 <div className="header-text">
@@ -2235,9 +2241,9 @@ export default function PrototypeApp({ initialUser }: Props) {
           )}
 
           {/* =========================================================
-              6. LEADERBOARD & AWARDS MODULE
+              6. LEADERBOARD & CERTIFICATES MODULE
              ========================================================= */}
-          {currentTab === "Leaderboard & Awards" && (
+          {currentTab === "Leaderboard & Certificates" && (
             <>
               <div className="module-header">
                 <div className="header-text">
