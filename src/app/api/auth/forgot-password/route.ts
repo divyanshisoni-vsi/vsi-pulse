@@ -139,26 +139,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const newHash = await bcrypt.hash(newPassword.trim(), 12);
+      // Fast hashing with 10 rounds
+      const newHash = await bcrypt.hash(newPassword.trim(), 10);
 
       const updated = await prisma.user.update({
         where: { email: normalizedEmail },
         data: { passwordHash: newHash },
+        select: { id: true },
       });
 
-      // Invalidate used code
-      try {
-        await prisma.$executeRawUnsafe(
-          `DELETE FROM password_reset_tokens WHERE email = $1`,
-          normalizedEmail
-        );
-      } catch (dbErr) {
-        console.error("Error clearing token:", dbErr);
-      }
+      // Invalidate used code asynchronously
+      prisma.$executeRawUnsafe(
+        `DELETE FROM password_reset_tokens WHERE email = $1`,
+        normalizedEmail
+      ).catch((err) => console.error("Error clearing token:", err));
 
-      // Record audit event
-      try {
-        await prisma.auditLog.create({
+      // Record audit event asynchronously
+      prisma.auditLog
+        .create({
           data: {
             actorEmail: normalizedEmail,
             action: "Password Reset Completed",
@@ -166,10 +164,8 @@ export async function POST(req: NextRequest) {
             entityId: updated.id,
             details: { message: "Account password successfully reset via email recovery code." },
           },
-        });
-      } catch (e) {
-        console.error("Audit log error:", e);
-      }
+        })
+        .catch((e) => console.error("Audit log error:", e));
 
       return NextResponse.json({
         success: true,

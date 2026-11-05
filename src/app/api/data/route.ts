@@ -103,14 +103,21 @@ export async function GET() {
       details: a.details ? JSON.stringify(a.details) : "",
     }));
 
-    return NextResponse.json({
-      employees,
-      logs,
-      attendance,
-      kpis: kpiList,
-      alerts: alertList,
-      audit: auditList,
-    });
+    return NextResponse.json(
+      {
+        employees,
+        logs,
+        attendance,
+        kpis: kpiList,
+        alerts: alertList,
+        audit: auditList,
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=5, stale-while-revalidate=30",
+        },
+      }
+    );
   } catch (err: any) {
     console.error("GET /api/data error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

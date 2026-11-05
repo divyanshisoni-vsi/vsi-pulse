@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -43,6 +43,11 @@ export default function LoginPage() {
   const isInvalidDomain =
     email.includes("@") && !email.toLowerCase().endsWith(domain);
 
+  useEffect(() => {
+    // Pre-warm dashboard route in browser cache for instant navigation
+    router.prefetch("/dashboard");
+  }, [router]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -76,8 +81,7 @@ export default function LoginPage() {
       if (res?.error) {
         setError("Invalid credentials. Please verify your email and password.");
       } else {
-        router.push(callbackUrl);
-        router.refresh();
+        window.location.href = callbackUrl;
       }
     } catch {
       setLoading(false);
