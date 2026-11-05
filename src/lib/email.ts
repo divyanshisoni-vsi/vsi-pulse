@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import nodemailer from "nodemailer";
 
 export async function sendRecoveryEmail({
@@ -68,65 +67,32 @@ export async function sendRecoveryEmail({
     </html>
   `;
 
-  // 1. Check for SMTP (Google Workspace / Gmail / Official Domain Mail)
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const port = Number(process.env.SMTP_PORT) || 587;
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port,
-        secure: port === 465,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
-      await transporter.sendMail({
-        from: `"VSI Pulse Security" <${fromEmail}>`,
-        to,
-        subject,
-        html,
-      });
-      console.log(`[Email Sent via Google SMTP] Recovery code sent to ${to} from ${fromEmail}`);
-      return { success: true, provider: "smtp" };
-    } catch (err) {
-      console.error("[SMTP Error]:", err);
-      throw err;
-    }
-  }
-
-  // 2. Check for Resend API Key
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const fromEmail = process.env.EMAIL_FROM || "VSI Pulse <onboarding@resend.dev>";
-      await resend.emails.send({
-        from: fromEmail,
-        to: [to],
-        subject,
-        html,
-      });
-      console.log(`[Email Sent via Resend] Recovery code sent to ${to}`);
-      return { success: true, provider: "resend" };
-    } catch (err) {
-      console.error("[Resend Error]:", err);
-      throw err;
-    }
-  }
-
-  // 3. Fallback check for production vs development
-  if (process.env.NODE_ENV === "production") {
+  // Google Workspace SMTP (info@virtualsolutionsindia.com)
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     throw new Error(
-      "Missing email configuration on Vercel! Please add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, and EMAIL_FROM to your Vercel Project Environment Variables."
+      "Missing Google SMTP settings on server! Please add SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS in your Vercel Project Environment Variables."
     );
   }
 
-  // Fallback for Local Dev (logs to server terminal)
-  console.warn(
-    `[EMAIL SIMULATION] No RESEND_API_KEY or SMTP credentials configured yet in .env.\n` +
-      `Simulated code dispatched to: ${to} -> CODE: [ ${code} ]`
-  );
-  return { success: true, provider: "simulation", simulated: true };
+  const port = Number(process.env.SMTP_PORT) || 587;
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
+  const info = await transporter.sendMail({
+    from: `"VSI Pulse Security" <${fromEmail}>`,
+    to,
+    subject,
+    html,
+  });
+
+  console.log(`[Google SMTP] Email dispatched to ${to}. MessageId: ${info.messageId}`);
+  return { success: true, provider: "smtp", messageId: info.messageId };
 }
