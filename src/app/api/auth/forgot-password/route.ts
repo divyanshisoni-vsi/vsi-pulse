@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendRecoveryEmail } from "@/lib/email";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
 export async function POST(req: NextRequest) {
@@ -26,6 +27,35 @@ export async function POST(req: NextRequest) {
 
     // Step 1: Request verification code and send real email
     if (action === "request-code") {
+      const ip = getClientIp(req);
+
+      // 1. IP rate limit: Max 10 requests / 15 minutes to prevent network abuse
+      const ipLimit = await checkRateLimit(`otp-ip:${ip}`, 10, 900);
+      if (!ipLimit.success) {
+        return rateLimitResponse(
+          `Too many OTP requests from your network. Please wait ${Math.ceil(ipLimit.retryAfterSeconds / 60)} minutes before trying again.`,
+          ipLimit
+        );
+      }
+
+      // 2. Email cooldown limit: Max 1 code request per 60 seconds (prevents accidental double clicks)
+      const cooldownLimit = await checkRateLimit(`otp-cooldown:${normalizedEmail}`, 1, 60);
+      if (!cooldownLimit.success) {
+        return rateLimitResponse(
+          `A verification code was already dispatched recently. Please wait ${cooldownLimit.retryAfterSeconds}s before requesting a new code.`,
+          cooldownLimit
+        );
+      }
+
+      // 3. Email quota limit: Max 3 OTP requests / 15 minutes per email (protects SMTP quota)
+      const quotaLimit = await checkRateLimit(`otp-quota:${normalizedEmail}`, 3, 900);
+      if (!quotaLimit.success) {
+        return rateLimitResponse(
+          `Security limit reached: maximum 3 recovery codes per 15 minutes. Please wait ${Math.ceil(quotaLimit.retryAfterSeconds / 60)} minutes.`,
+          quotaLimit
+        );
+      }
+
       const user = await prisma.user.findUnique({
         where: { email: normalizedEmail },
       });
@@ -112,6 +142,21 @@ export async function POST(req: NextRequest) {
 
     // Step 2: Verify code entered from email and reset password
     if (action === "verify-reset") {
+      // Brute-force protection on code verification: Max 5 failed attempts / 15 minutes
+      const verifyLimit = await checkRateLimit(`otp-verify:${normalizedEmail}`, 5, 900);
+      if (!verifyLimit.success) {
+        // Invalidate token immediately to prevent further attempts
+        prisma.$executeRawUnsafe(
+          `DELETE FROM password_reset_tokens WHERE email = $1`,
+          normalizedEmail
+        ).catch(console.error);
+
+        return rateLimitResponse(
+          "Too many failed verification attempts. For your security, this verification code has been invalidated. Please request a new code.",
+          verifyLimit
+        );
+      }
+
       const tokens: any[] = await prisma.$queryRawUnsafe(
         `SELECT * FROM password_reset_tokens WHERE email = $1 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
         normalizedEmail
@@ -127,7 +172,9 @@ export async function POST(req: NextRequest) {
       const isMatch = await bcrypt.compare((code || "").trim(), tokens[0].code_hash);
       if (!isMatch) {
         return NextResponse.json(
-          { error: "Invalid verification code. Please check the code in your email and try again." },
+          {
+            error: `Invalid verification code. Please check your email (${verifyLimit.remaining} attempt${verifyLimit.remaining === 1 ? "" : "s"} remaining).`,
+          },
           { status: 400 }
         );
       }
@@ -148,11 +195,17 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
 
-      // Invalidate used code asynchronously
-      prisma.$executeRawUnsafe(
-        `DELETE FROM password_reset_tokens WHERE email = $1`,
-        normalizedEmail
-      ).catch((err) => console.error("Error clearing token:", err));
+      // Invalidate used code & reset failed attempt counter asynchronously
+      prisma.$transaction([
+        prisma.$executeRawUnsafe(
+          `DELETE FROM password_reset_tokens WHERE email = $1`,
+          normalizedEmail
+        ),
+        prisma.$executeRawUnsafe(
+          `DELETE FROM rate_limits WHERE key = $1`,
+          `otp-verify:${normalizedEmail}`
+        ),
+      ]).catch((err) => console.error("Error clearing token:", err));
 
       // Record audit event asynchronously
       prisma.auditLog

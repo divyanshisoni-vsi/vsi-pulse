@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -42,8 +43,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         if (!user || user.status !== "active") return null;
 
+        // Brute-force protection: Max 5 failed login attempts per 15 minutes
+        const failCheck = await checkRateLimit(`login-fail:${normalizedEmail}`, 5, 900);
+        if (!failCheck.success) {
+          console.warn(`[Login Rate Limit] Account ${normalizedEmail} locked for 15 minutes.`);
+          return null;
+        }
+
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
+
+        // Reset failed counter upon successful login
+        prisma.$executeRawUnsafe(
+          `DELETE FROM rate_limits WHERE key = $1`,
+          `login-fail:${normalizedEmail}`
+        ).catch(console.error);
 
         // Exactly 2 roles: Admin (which is manager/admin) and Employee
         const effectiveRole =

@@ -171,3 +171,11 @@ model PasswordResetToken {
   @@index([email])
   @@map("password_reset_tokens")
 }
+
+model RateLimit {
+  key     String   @id
+  count   Int      @default(1)
+  resetAt DateTime @map("reset_at")
+
+  @@map("rate_limits")
+}

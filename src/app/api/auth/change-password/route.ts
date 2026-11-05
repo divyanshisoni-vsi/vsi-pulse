@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
 export async function POST(req: NextRequest) {
@@ -11,6 +12,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Unauthorized. Please log in first." },
         { status: 401 }
+      );
+    }
+
+    const email = session.user.email.toLowerCase().trim();
+
+    // Rate limit: Max 5 password change attempts per 15 minutes per user
+    const limit = await checkRateLimit(`change-pwd:${email}`, 5, 900);
+    if (!limit.success) {
+      return rateLimitResponse(
+        `Too many password change attempts. For security, please wait ${Math.ceil(limit.retryAfterSeconds / 60)} minutes.`,
+        limit
       );
     }
 
@@ -31,7 +43,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const email = session.user.email.toLowerCase().trim();
     const user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, passwordHash: true },
@@ -48,7 +59,9 @@ export async function POST(req: NextRequest) {
     const isCurrentValid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!isCurrentValid) {
       return NextResponse.json(
-        { error: "Current password does not match our records." },
+        {
+          error: `Current password does not match our records (${limit.remaining} attempt${limit.remaining === 1 ? "" : "s"} remaining).`,
+        },
         { status: 400 }
       );
     }
@@ -59,6 +72,12 @@ export async function POST(req: NextRequest) {
       where: { email },
       data: { passwordHash: newHash },
     });
+
+    // Reset rate limit key on successful change
+    prisma.$executeRawUnsafe(
+      `DELETE FROM rate_limits WHERE key = $1`,
+      `change-pwd:${email}`
+    ).catch(console.error);
 
     // Record audit log asynchronously without blocking response
     prisma.auditLog

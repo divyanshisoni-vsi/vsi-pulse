@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
+import { checkRateLimit, rateLimitResponse, getClientIp } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -127,7 +128,17 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
-    const actorEmail = session?.user?.email || "admin@virtualsolutionsindia.com";
+    const actorEmail = session?.user?.email || getClientIp(req);
+
+    // Rate limit: Max 60 modifications per minute per user/ip
+    const writeLimit = await checkRateLimit(`data-write:${actorEmail}`, 60, 60);
+    if (!writeLimit.success) {
+      return rateLimitResponse(
+        `Action threshold reached. Please wait ${writeLimit.retryAfterSeconds}s before submitting more changes.`,
+        writeLimit
+      );
+    }
+
     const body = await req.json();
     const { action, type, record, id } = body;
 
