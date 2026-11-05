@@ -261,7 +261,7 @@ export default function PrototypeApp({ initialUser }: Props) {
   const [activeModal, setActiveModal] = useState<React.ReactNode | null>(null);
 
   // User session & Role handling: Exactly 2 roles -> Admin (Manager) and Employee
-  const sessionEmail = initialUser.email || "admin@virtualsolutionsindia.com";
+  const sessionEmail = initialUser.email || "divyanshisoni@virtualsolutionsindia.com";
   const initialRole =
     initialUser.role?.toLowerCase() === "employee" ? "Employee" : "Admin";
 
