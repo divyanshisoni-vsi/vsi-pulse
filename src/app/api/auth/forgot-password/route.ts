@@ -3,9 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { sendRecoveryEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 
-// In-memory store for verification codes (15-minute expiration)
-const resetCodeStore = new Map<string, { code: string; expiresAt: number }>();
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -49,11 +46,30 @@ export async function POST(req: NextRequest) {
 
       // Generate 6-digit secure numeric code
       const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+      const codeHash = await bcrypt.hash(generatedCode, 10);
 
-      resetCodeStore.set(normalizedEmail, { code: generatedCode, expiresAt });
+      // Clean up previous tokens and persist to Postgres
+      try {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM password_reset_tokens WHERE email = $1`,
+          normalizedEmail
+        );
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO password_reset_tokens (email, code_hash, expires_at) VALUES ($1, $2, $3)`,
+          normalizedEmail,
+          codeHash,
+          expiresAt
+        );
+      } catch (dbErr) {
+        console.error("DB error saving reset token:", dbErr);
+        return NextResponse.json(
+          { error: "Failed to initialize password reset. Please try again." },
+          { status: 500 }
+        );
+      }
 
-      // Send real email via Resend or SMTP
+      // Send real email via Google SMTP / Resend
       try {
         await sendRecoveryEmail({ to: normalizedEmail, code: generatedCode });
       } catch (mailErr: any) {
@@ -91,16 +107,20 @@ export async function POST(req: NextRequest) {
 
     // Step 2: Verify code entered from email and reset password
     if (action === "verify-reset") {
-      const stored = resetCodeStore.get(normalizedEmail);
+      const tokens: any[] = await prisma.$queryRawUnsafe(
+        `SELECT * FROM password_reset_tokens WHERE email = $1 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1`,
+        normalizedEmail
+      );
 
-      if (!stored || Date.now() > stored.expiresAt) {
+      if (!tokens || tokens.length === 0) {
         return NextResponse.json(
           { error: "Verification code has expired or was not requested. Please request a new code." },
           { status: 400 }
         );
       }
 
-      if (stored.code !== (code || "").trim()) {
+      const isMatch = await bcrypt.compare((code || "").trim(), tokens[0].code_hash);
+      if (!isMatch) {
         return NextResponse.json(
           { error: "Invalid verification code. Please check the code in your email and try again." },
           { status: 400 }
@@ -122,7 +142,14 @@ export async function POST(req: NextRequest) {
       });
 
       // Invalidate used code
-      resetCodeStore.delete(normalizedEmail);
+      try {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM password_reset_tokens WHERE email = $1`,
+          normalizedEmail
+        );
+      } catch (dbErr) {
+        console.error("Error clearing token:", dbErr);
+      }
 
       // Record audit event
       try {

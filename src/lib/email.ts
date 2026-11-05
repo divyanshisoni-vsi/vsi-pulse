@@ -68,7 +68,36 @@ export async function sendRecoveryEmail({
     </html>
   `;
 
-  // 1. Check for Resend API Key
+  // 1. Check for SMTP (Google Workspace / Gmail / Official Domain Mail)
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const port = Number(process.env.SMTP_PORT) || 587;
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port,
+        secure: port === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
+      await transporter.sendMail({
+        from: `"VSI Pulse Security" <${fromEmail}>`,
+        to,
+        subject,
+        html,
+      });
+      console.log(`[Email Sent via Google SMTP] Recovery code sent to ${to} from ${fromEmail}`);
+      return { success: true, provider: "smtp" };
+    } catch (err) {
+      console.error("[SMTP Error]:", err);
+      throw err;
+    }
+  }
+
+  // 2. Check for Resend API Key
   if (process.env.RESEND_API_KEY) {
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
@@ -83,34 +112,6 @@ export async function sendRecoveryEmail({
       return { success: true, provider: "resend" };
     } catch (err) {
       console.error("[Resend Error]:", err);
-      throw err;
-    }
-  }
-
-  // 2. Check for SMTP (Google Workspace / Gmail / Custom SMTP)
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: Number(process.env.SMTP_PORT) === 465,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      const fromEmail = process.env.EMAIL_FROM || process.env.SMTP_USER;
-      await transporter.sendMail({
-        from: `"VSI Pulse Security" <${fromEmail}>`,
-        to,
-        subject,
-        html,
-      });
-      console.log(`[Email Sent via SMTP] Recovery code sent to ${to}`);
-      return { success: true, provider: "smtp" };
-    } catch (err) {
-      console.error("[SMTP Error]:", err);
       throw err;
     }
   }
