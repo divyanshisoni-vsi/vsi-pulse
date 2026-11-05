@@ -260,15 +260,13 @@ export default function PrototypeApp({ initialUser }: Props) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [activeModal, setActiveModal] = useState<React.ReactNode | null>(null);
 
-  // User session & Role handling: Exactly 2 roles -> Admin (Manager) and Employee
+  // User session & Role handling: strictly enforced from authenticated database session
   const sessionEmail = initialUser.email || "divyanshisoni@virtualsolutionsindia.com";
-  const initialRole =
+  const userRole: "Admin" | "Employee" =
     initialUser.role?.toLowerCase() === "employee" ? "Employee" : "Admin";
-
-  const [activeRole, setActiveRole] = useState<"Admin" | "Employee">(initialRole);
   const sessionEmployeeId = initialUser.id ? Number(initialUser.id) : 1;
 
-  const isAdmin = activeRole === "Admin";
+  const isAdmin = userRole === "Admin";
 
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
@@ -1321,22 +1319,7 @@ export default function PrototypeApp({ initialUser }: Props) {
           </div>
 
           <div className="topbar-right">
-            {/* Role Switcher (Admin / Employee) */}
-            <div className="role-selector">
-              <label>Role:</label>
-              <select
-                className="role-select"
-                value={activeRole}
-                onChange={(e) =>
-                  setActiveRole(e.target.value as "Admin" | "Employee")
-                }
-              >
-                <option value="Admin">Admin (Manager)</option>
-                <option value="Employee">Employee</option>
-              </select>
-            </div>
-
-            {/* User Profile */}
+            {/* User Profile (Role strictly enforced from session) */}
             <div className="user-profile">
               <div className="avatar-badge">
                 {(sessionEmail.split("@")[0] || "AD").slice(0, 2).toUpperCase()}
@@ -1345,7 +1328,9 @@ export default function PrototypeApp({ initialUser }: Props) {
                 <span className="user-name">
                   {initialUser.name || sessionEmail.split("@")[0]}
                 </span>
-                <span className="user-role-tag">{activeRole}</span>
+                <span className={`user-role-tag ${isAdmin ? "admin-tag" : "employee-tag"}`}>
+                  {userRole}
+                </span>
               </div>
             </div>
 
