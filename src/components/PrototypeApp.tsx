@@ -30,6 +30,8 @@ import {
   Layers,
   ChevronRight,
   TrendingUp,
+  KeyRound,
+  Lock,
 } from "lucide-react";
 
 // Types
@@ -103,6 +105,144 @@ type Props = {
     id?: string | null;
   };
 };
+
+function ChangePasswordModal({
+  closeModal,
+  userEmail,
+}: {
+  closeModal: () => void;
+  userEmail: string;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+
+    if (newPassword !== confirmPassword) {
+      setError("New passwords do not match.");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters long.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      setLoading(false);
+
+      if (!res.ok) {
+        setError(data.error || "Failed to update password.");
+      } else {
+        setSuccess(true);
+      }
+    } catch {
+      setLoading(false);
+      setError("Network error. Please try again.");
+    }
+  }
+
+  return (
+    <div className="modal-dialog" style={{ maxWidth: "440px" }}>
+      <div className="modal-head">
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <KeyRound size={17} style={{ color: "#2563eb" }} />
+          <h2>Change Password</h2>
+        </div>
+        <button className="modal-close-btn" onClick={closeModal}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="modal-content">
+        {success ? (
+          <div style={{ textAlign: "center", padding: "16px 8px" }}>
+            <CheckCircle2 size={40} style={{ color: "#10b981", margin: "0 auto 12px" }} />
+            <h3 style={{ margin: "0 0 6px 0", fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
+              Password Changed!
+            </h3>
+            <p style={{ margin: "0 0 20px 0", fontSize: "13px", color: "#64748b" }}>
+              Your account password has been updated. Please remember your new password for your next login.
+            </p>
+            <button className="btn-primary" style={{ width: "100%", justifyContent: "center" }} onClick={closeModal}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+              Changing password for: <strong>{userEmail}</strong>
+            </p>
+
+            <div className="form-group">
+              <label>Current Password</label>
+              <input
+                type="password"
+                required
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Enter current password"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>New Password</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 6 characters"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Confirm New Password</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter new password"
+              />
+            </div>
+
+            {error && (
+              <div className="login-error-msg">
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="modal-actions" style={{ padding: "12px 0 0 0", marginTop: "4px" }}>
+              <button type="button" className="btn-secondary" onClick={closeModal}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary" disabled={loading}>
+                {loading ? "Updating…" : "Update Password"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function PrototypeApp({ initialUser }: Props) {
   // Database state - initial zero data
@@ -220,6 +360,15 @@ export default function PrototypeApp({ initialUser }: Props) {
   // Modals
   const openModal = (content: React.ReactNode) => setActiveModal(content);
   const closeModal = () => setActiveModal(null);
+
+  const openChangePasswordModal = () => {
+    openModal(
+      <ChangePasswordModal
+        closeModal={closeModal}
+        userEmail={sessionEmail}
+      />
+    );
+  };
 
   // CRUD API Handlers
   const saveRecord = async (
@@ -1199,6 +1348,15 @@ export default function PrototypeApp({ initialUser }: Props) {
                 <span className="user-role-tag">{activeRole}</span>
               </div>
             </div>
+
+            <button
+              className="btn-secondary btn-sm"
+              onClick={openChangePasswordModal}
+              title="Change Account Password"
+            >
+              <KeyRound size={13} />
+              <span>Password</span>
+            </button>
 
             <button
               className="btn-signout"
