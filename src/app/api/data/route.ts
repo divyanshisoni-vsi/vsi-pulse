@@ -71,6 +71,9 @@ export async function GET() {
           ? "Needs clarification"
           : "Pending",
       source: l.source || "Web Portal",
+      notes: l.notes || "",
+      verifiedBy: l.verifiedBy,
+      verifiedAt: l.verifiedAt ? l.verifiedAt.toISOString() : null,
     }));
 
     const attendance = attendanceRecords.map((a) => ({
@@ -149,28 +152,27 @@ export async function POST(req: NextRequest) {
           "Needs clarification": "needs_clarification",
           Pending: "pending",
         };
+        const logData: any = {
+          logDate: new Date(record.date || new Date()),
+          userId: Number(record.employeeId),
+          activity: record.activity,
+          quantity: Number(record.quantity) || 0,
+          status: statusMap[record.status] || "pending",
+          source: record.source || "Manual",
+          notes: record.notes !== undefined ? (record.notes ? String(record.notes) : null) : undefined,
+        };
+        if (record.status === "Verified") {
+          logData.verifiedAt = new Date();
+        }
+
         if (id) {
           await prisma.dailyLog.update({
             where: { id },
-            data: {
-              logDate: new Date(record.date),
-              userId: Number(record.employeeId),
-              activity: record.activity,
-              quantity: Number(record.quantity) || 0,
-              status: statusMap[record.status] || "pending",
-              source: record.source || "Manual",
-            },
+            data: logData,
           });
         } else {
           await prisma.dailyLog.create({
-            data: {
-              logDate: new Date(record.date || new Date()),
-              userId: Number(record.employeeId),
-              activity: record.activity,
-              quantity: Number(record.quantity) || 0,
-              status: statusMap[record.status] || "pending",
-              source: record.source || "Manual",
-            },
+            data: logData,
           });
         }
       } else if (type === "employees") {
@@ -297,6 +299,66 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "verifyLog") {
+      const { id } = body;
+      await prisma.dailyLog.update({
+        where: { id: Number(id) },
+        data: {
+          status: "verified",
+          verifiedAt: new Date(),
+        },
+      });
+
+      prisma.auditLog.create({
+        data: {
+          actorEmail,
+          action: "Verified Daily Log",
+          entityType: "daily_log",
+          entityId: Number(id),
+          details: { verifiedAt: new Date().toISOString() },
+        },
+      }).catch(() => {});
+
+      return NextResponse.json({ success: true, message: "Log verified" });
+    }
+
+    if (action === "requestClarification") {
+      const { id, notes } = body;
+      const updatedLog = await prisma.dailyLog.update({
+        where: { id: Number(id) },
+        data: {
+          status: "needs_clarification",
+          notes: notes || "Clarification requested by Manager / Admin.",
+        },
+        include: { user: true },
+      });
+
+      // Create an alert so the system highlights it
+      if (updatedLog.user) {
+        prisma.alert.create({
+          data: {
+            type: "Clarification Needed",
+            message: `${updatedLog.user.name}: ${notes || "Additional details requested for daily log."}`,
+            status: "open",
+            relatedUserId: updatedLog.userId,
+            relatedLogId: updatedLog.id,
+          },
+        }).catch(() => {});
+      }
+
+      prisma.auditLog.create({
+        data: {
+          actorEmail,
+          action: "Requested Log Clarification",
+          entityType: "daily_log",
+          entityId: Number(id),
+          details: { notes },
+        },
+      }).catch(() => {});
+
+      return NextResponse.json({ success: true, message: "Clarification requested" });
     }
 
     if (action === "removeRecord") {

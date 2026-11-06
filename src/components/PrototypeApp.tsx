@@ -55,6 +55,8 @@ export type DailyLog = {
   quantity: number;
   status: string;
   source: string;
+  notes?: string;
+  verifiedAt?: string | null;
 };
 
 export type Attendance = {
@@ -271,6 +273,9 @@ export default function PrototypeApp({ initialUser }: Props) {
   // Dashboard View Switcher: Performance Overview vs Leave & Attendance Overview
   const [dashboardView, setDashboardView] = useState<"performance" | "leave">("performance");
 
+  // Daily Logs Filter: All, Needs clarification, Pending, Verified
+  const [logFilter, setLogFilter] = useState<"All" | "Needs clarification" | "Pending" | "Verified">("All");
+
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
   const leaveDoughnutRef = useRef<HTMLCanvasElement | null>(null);
@@ -470,6 +475,211 @@ export default function PrototypeApp({ initialUser }: Props) {
         ),
       }));
     }
+  };
+
+  // 1-Click Fast Verification (Admin)
+  const quickVerify = async (id: number) => {
+    try {
+      setDb((prev) => ({
+        ...prev,
+        logs: prev.logs.map((l) =>
+          l.id === id ? { ...l, status: "Verified" } : l
+        ),
+      }));
+
+      await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verifyLog", id }),
+      });
+      syncAudit("Verified Daily Log", `Log ID #${id}`);
+      loadData();
+    } catch (err) {
+      console.error("Quick verify error:", err);
+      loadData();
+    }
+  };
+
+  // 1-Click Clarification Request Modal (Admin)
+  const openClarifyModal = (log: DailyLog) => {
+    const emp = person(log.employeeId);
+    const presets = [
+      "Please provide deliverable link / spreadsheet row",
+      "Confirm tested unit count and batch details",
+      "Shift timing hours mismatch with logged quantity",
+      "Please detail specific tickets / cases verified",
+    ];
+
+    openModal(
+      <div className="modal-dialog">
+        <div className="modal-head">
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <AlertCircle size={18} style={{ color: "#f59e0b" }} />
+            <h2>Request Clarification</h2>
+          </div>
+          <button className="modal-close-btn" onClick={closeModal}>
+            <X size={18} />
+          </button>
+        </div>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.target as HTMLFormElement;
+            const notes =
+              (form.elements.namedItem("notes") as HTMLTextAreaElement)?.value ||
+              "";
+
+            try {
+              setDb((prev) => ({
+                ...prev,
+                logs: prev.logs.map((l) =>
+                  l.id === log.id
+                    ? { ...l, status: "Needs clarification", notes }
+                    : l
+                ),
+              }));
+              closeModal();
+
+              await fetch("/api/data", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "requestClarification",
+                  id: log.id,
+                  notes,
+                }),
+              });
+              syncAudit(
+                "Requested Log Clarification",
+                `${emp?.name || log.employeeId}: ${notes}`
+              );
+              loadData();
+            } catch (err) {
+              console.error("Clarification error:", err);
+              loadData();
+            }
+          }}
+        >
+          <div className="modal-content">
+            <div
+              style={{
+                background: "#f8fafc",
+                padding: "12px 14px",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                marginBottom: "14px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12px",
+                  color: "#64748b",
+                  marginBottom: "4px",
+                }}
+              >
+                <span>
+                  <strong>Member:</strong> {emp?.name || `ID #${log.employeeId}`}
+                </span>
+                <span>
+                  <strong>Date:</strong> {log.date}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: "13px",
+                  color: "#1e293b",
+                  fontWeight: 500,
+                }}
+              >
+                {log.activity} ({log.quantity} units)
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "12px" }}>
+              <label
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#475569",
+                  display: "block",
+                  marginBottom: "6px",
+                }}
+              >
+                Quick Feedback Presets:
+              </label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {presets.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className="quick-tag-btn"
+                    onClick={() => {
+                      const ta = document.getElementById(
+                        "clarification-notes-input"
+                      ) as HTMLTextAreaElement;
+                      if (ta) ta.value = preset;
+                    }}
+                  >
+                    + {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#334155",
+                  display: "block",
+                  marginBottom: "6px",
+                }}
+              >
+                Feedback / What needs clarification:
+              </label>
+              <textarea
+                id="clarification-notes-input"
+                name="notes"
+                rows={3}
+                required
+                placeholder="Explain what needs verification, missing spreadsheet links, or batch numbers..."
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  fontFamily: "inherit",
+                }}
+              />
+            </div>
+          </div>
+          <div className="modal-foot">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={closeModal}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-primary"
+              style={{
+                background: "#f59e0b",
+                borderColor: "#f59e0b",
+              }}
+            >
+              <AlertCircle size={14} />
+              <span>Send Clarification Request</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    );
   };
 
   // Certificate Modal
@@ -831,6 +1041,9 @@ export default function PrototypeApp({ initialUser }: Props) {
             // Default employeeId for Employee role submitting a log
             if (!isAdmin && type === "logs") {
               data["employeeId"] = sessionEmployeeId;
+              if (old.status === "Needs clarification") {
+                data["status"] = "Pending";
+              }
             }
 
             saveRecord(type, id || 0, data);
@@ -928,6 +1141,50 @@ export default function PrototypeApp({ initialUser }: Props) {
 
               {type === "logs" && (
                 <>
+                  {old.notes && (
+                    <div
+                      className="full-span"
+                      style={{
+                        background: "#fffbeb",
+                        border: "1px solid #fde68a",
+                        borderRadius: "8px",
+                        padding: "12px 14px",
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <AlertCircle
+                        size={18}
+                        style={{
+                          color: "#d97706",
+                          flexShrink: 0,
+                          marginTop: "2px",
+                        }}
+                      />
+                      <div>
+                        <div
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            color: "#92400e",
+                          }}
+                        >
+                          Manager Clarification Request:
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "13px",
+                            color: "#b45309",
+                            marginTop: "2px",
+                          }}
+                        >
+                          {old.notes}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label>Activity Date</label>
                     <input
@@ -1006,6 +1263,23 @@ export default function PrototypeApp({ initialUser }: Props) {
                       name="source"
                       defaultValue={old.source || "Web Portal Submission"}
                       required
+                    />
+                  </div>
+                  <div className="full-span">
+                    <label>
+                      {isAdmin
+                        ? "Review Notes / Clarification Feedback"
+                        : "Clarification Details / Response"}
+                    </label>
+                    <textarea
+                      name="notes"
+                      rows={2}
+                      defaultValue={old.notes || ""}
+                      placeholder={
+                        isAdmin
+                          ? "Add feedback or review notes..."
+                          : "Provide sheet link, test case details, or answer questions..."
+                      }
                     />
                   </div>
                 </>
@@ -1180,6 +1454,10 @@ export default function PrototypeApp({ initialUser }: Props) {
   const pendingClarifications = db.logs.filter(
     (l) => l.status === "Needs clarification"
   ).length;
+
+  const myClarificationLogs = visibleLogs().filter(
+    (l) => l.status === "Needs clarification"
+  );
 
   const totalVerifiedUnits = db.logs
     .filter((l) => l.status === "Verified")
@@ -1603,6 +1881,60 @@ export default function PrototypeApp({ initialUser }: Props) {
                   <span>Leave & Attendance Overview</span>
                 </button>
               </div>
+
+              {/* Clarification Action Banner */}
+              {myClarificationLogs.length > 0 && (
+                <div className="clarification-alert-banner">
+                  <div className="clarification-banner-left">
+                    <AlertCircle size={22} className="alert-icon" />
+                    <div>
+                      <h4>
+                        {isAdmin
+                          ? `${myClarificationLogs.length} Daily Log${
+                              myClarificationLogs.length > 1 ? "s" : ""
+                            } Flagged for Clarification`
+                          : `Action Required: Clarification Needed on ${
+                              myClarificationLogs.length
+                            } Daily Log${
+                              myClarificationLogs.length > 1 ? "s" : ""
+                            }`}
+                      </h4>
+                      <p>
+                        {isAdmin
+                          ? "These logs are awaiting additional details or deliverables from team members."
+                          : `Divyanshi / Manager note: "${
+                              myClarificationLogs[0].notes ||
+                              "Please provide additional details on deliverables."
+                            }"`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    className="btn-primary btn-sm"
+                    style={{
+                      background: "#d97706",
+                      borderColor: "#d97706",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      whiteSpace: "nowrap",
+                    }}
+                    onClick={() => {
+                      if (isAdmin) {
+                        setCurrentTab("Daily Logs");
+                        setLogFilter("Needs clarification");
+                      } else {
+                        editRecordModal("logs", myClarificationLogs[0].id);
+                      }
+                    }}
+                  >
+                    <span>
+                      {isAdmin ? "View Flagged Logs" : "Update & Clarify Now"}
+                    </span>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
 
               {dashboardView === "performance" ? (
                 <>
@@ -2373,28 +2705,132 @@ export default function PrototypeApp({ initialUser }: Props) {
                 </div>
               </div>
 
+              {/* Clarification Action Banner */}
+              {myClarificationLogs.length > 0 && (
+                <div className="clarification-alert-banner">
+                  <div className="clarification-banner-left">
+                    <AlertCircle size={22} className="alert-icon" />
+                    <div>
+                      <h4>
+                        {isAdmin
+                          ? `${myClarificationLogs.length} Daily Log${
+                              myClarificationLogs.length > 1 ? "s" : ""
+                            } Flagged for Clarification`
+                          : `Action Required: Clarification Needed on ${
+                              myClarificationLogs.length
+                            } Daily Log${
+                              myClarificationLogs.length > 1 ? "s" : ""
+                            }`}
+                      </h4>
+                      <p>
+                        {isAdmin
+                          ? "These logs require additional information or verification from team members."
+                          : `Divyanshi / Manager note: "${
+                              myClarificationLogs[0].notes ||
+                              "Please provide additional details on deliverables."
+                            }"`}
+                      </p>
+                    </div>
+                  </div>
+                  {!isAdmin && (
+                    <button
+                      className="btn-primary btn-sm"
+                      style={{
+                        background: "#d97706",
+                        borderColor: "#d97706",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        whiteSpace: "nowrap",
+                      }}
+                      onClick={() =>
+                        editRecordModal("logs", myClarificationLogs[0].id)
+                      }
+                    >
+                      <span>Update & Clarify Now</span>
+                      <ChevronRight size={14} />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Log Status Filter Tabs */}
+              <div className="log-filter-tabs">
+                {(
+                  [
+                    {
+                      key: "All",
+                      label: "All Logs",
+                      count: visibleLogs().length,
+                    },
+                    {
+                      key: "Needs clarification",
+                      label: "Needs Clarification",
+                      count: visibleLogs().filter(
+                        (l) => l.status === "Needs clarification"
+                      ).length,
+                    },
+                    {
+                      key: "Pending",
+                      label: "Pending Verification",
+                      count: visibleLogs().filter((l) => l.status === "Pending")
+                        .length,
+                    },
+                    {
+                      key: "Verified",
+                      label: "Verified",
+                      count: visibleLogs().filter((l) => l.status === "Verified")
+                        .length,
+                    },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`log-filter-btn ${
+                      logFilter === tab.key ? "active" : ""
+                    }`}
+                    onClick={() => setLogFilter(tab.key)}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="log-filter-badge">{tab.count}</span>
+                  </button>
+                ))}
+              </div>
+
               <div className="card-panel">
                 {filterRows(visibleLogs(), [
                   (l) => l.activity,
                   (l) => l.status,
                   (l) => l.source,
                   (l) => person(l.employeeId)?.name,
-                ]).length === 0 ? (
+                ]).filter((l) => {
+                  if (logFilter === "All") return true;
+                  return l.status === logFilter;
+                }).length === 0 ? (
                   <div className="empty-box">
                     <div className="empty-icon">
                       <ClipboardList size={22} />
                     </div>
-                    <div className="empty-title">No daily logs recorded yet</div>
-                    <div className="empty-desc">
-                      Keep track of accomplishments, deliverable quantities, and daily output by submitting your first entry.
+                    <div className="empty-title">
+                      {logFilter === "All"
+                        ? "No daily logs recorded yet"
+                        : `No logs found with status "${logFilter}"`}
                     </div>
-                    <button
-                      className="btn-primary"
-                      onClick={() => editRecordModal("logs")}
-                    >
-                      <Plus size={14} />
-                      <span>Log First Activity</span>
-                    </button>
+                    <div className="empty-desc">
+                      {logFilter === "All"
+                        ? "Keep track of accomplishments, deliverable quantities, and daily output by submitting your first entry."
+                        : "Switch filter tabs above to view other daily activity records."}
+                    </div>
+                    {logFilter === "All" && (
+                      <button
+                        className="btn-primary"
+                        onClick={() => editRecordModal("logs")}
+                      >
+                        <Plus size={14} />
+                        <span>Log First Activity</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="table-responsive">
@@ -2416,67 +2852,131 @@ export default function PrototypeApp({ initialUser }: Props) {
                           (l) => l.status,
                           (l) => l.source,
                           (l) => person(l.employeeId)?.name,
-                        ]).map((l) => (
-                          <tr key={l.id}>
-                            <td style={{ whiteSpace: "nowrap" }}>{l.date}</td>
-                            {isAdmin && (
-                              <td style={{ fontWeight: 600 }}>
-                                {person(l.employeeId)?.name || `ID #${l.employeeId}`}
+                        ])
+                          .filter((l) => {
+                            if (logFilter === "All") return true;
+                            return l.status === logFilter;
+                          })
+                          .map((l) => (
+                            <tr key={l.id}>
+                              <td style={{ whiteSpace: "nowrap" }}>{l.date}</td>
+                              {isAdmin && (
+                                <td style={{ fontWeight: 600 }}>
+                                  {person(l.employeeId)?.name ||
+                                    `ID #${l.employeeId}`}
+                                </td>
+                              )}
+                              <td style={{ maxWidth: "340px" }}>
+                                <div
+                                  style={{
+                                    fontWeight: 500,
+                                    color: "#1e293b",
+                                  }}
+                                >
+                                  {l.activity}
+                                </div>
+                                {l.notes && (
+                                  <div className="log-notes-badge">
+                                    <AlertCircle
+                                      size={12}
+                                      style={{
+                                        color: "#d97706",
+                                        flexShrink: 0,
+                                      }}
+                                    />
+                                    <span>{l.notes}</span>
+                                  </div>
+                                )}
                               </td>
-                            )}
-                            <td style={{ maxWidth: "340px" }}>{l.activity}</td>
-                            <td style={{ fontWeight: 600 }}>{l.quantity}</td>
-                            <td>
-                              <span
-                                className={`status-pill ${
-                                  l.status === "Verified"
-                                    ? "verified"
-                                    : l.status === "Needs clarification"
-                                    ? "needs-clarification"
-                                    : "pending"
-                                }`}
+                              <td style={{ fontWeight: 600 }}>{l.quantity}</td>
+                              <td>
+                                <span
+                                  className={`status-pill ${
+                                    l.status === "Verified"
+                                      ? "verified"
+                                      : l.status === "Needs clarification"
+                                      ? "needs-clarification"
+                                      : "pending"
+                                  }`}
+                                >
+                                  {l.status}
+                                </span>
+                              </td>
+                              <td
+                                style={{ color: "#64748b", fontSize: "12px" }}
                               >
-                                {l.status}
-                              </span>
-                            </td>
-                            <td style={{ color: "#64748b", fontSize: "12px" }}>
-                              {l.source}
-                            </td>
-                            <td>
-                              <div style={{ display: "flex", gap: "6px" }}>
-                                {isAdmin && l.status !== "Verified" && (
+                                {l.source}
+                              </td>
+                              <td>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "6px",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  {isAdmin && l.status !== "Verified" && (
+                                    <button
+                                      className="btn-verify-quick"
+                                      title="1-click approve & verify"
+                                      onClick={() => quickVerify(l.id)}
+                                    >
+                                      <CheckCircle2 size={13} />
+                                      <span>Verify</span>
+                                    </button>
+                                  )}
+                                  {isAdmin &&
+                                    l.status !== "Needs clarification" && (
+                                      <button
+                                        className="btn-clarify-quick"
+                                        title="Request clarification from team member"
+                                        onClick={() => openClarifyModal(l)}
+                                      >
+                                        <AlertCircle size={13} />
+                                        <span>Clarify</span>
+                                      </button>
+                                    )}
+                                  {!isAdmin &&
+                                    l.status === "Needs clarification" && (
+                                      <button
+                                        className="btn-primary btn-sm"
+                                        style={{
+                                          background: "#d97706",
+                                          borderColor: "#d97706",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                        }}
+                                        title="Respond & clarify"
+                                        onClick={() =>
+                                          editRecordModal("logs", l.id)
+                                        }
+                                      >
+                                        <Edit2 size={12} />
+                                        <span>Clarify</span>
+                                      </button>
+                                    )}
                                   <button
                                     className="btn-secondary btn-sm"
-                                    title="Quick verify"
-                                    onClick={() =>
-                                      saveRecord("logs", l.id, {
-                                        ...l,
-                                        status: "Verified",
-                                      })
-                                    }
+                                    onClick={() => editRecordModal("logs", l.id)}
+                                    title="Edit record"
                                   >
-                                    <CheckCircle2 size={13} style={{ color: "#10b981" }} />
-                                    <span>Verify</span>
+                                    <Edit2 size={13} />
                                   </button>
-                                )}
-                                <button
-                                  className="btn-secondary btn-sm"
-                                  onClick={() => editRecordModal("logs", l.id)}
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                                {(isAdmin || l.employeeId === sessionEmployeeId) && (
-                                  <button
-                                    className="btn-danger btn-sm"
-                                    onClick={() => removeRecord("logs", l.id)}
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  {(isAdmin ||
+                                    l.employeeId === sessionEmployeeId) && (
+                                    <button
+                                      className="btn-danger btn-sm"
+                                      onClick={() => removeRecord("logs", l.id)}
+                                      title="Delete record"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </div>
