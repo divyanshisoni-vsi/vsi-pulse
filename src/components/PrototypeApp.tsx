@@ -32,6 +32,7 @@ import {
   TrendingUp,
   KeyRound,
   Lock,
+  Mail,
 } from "lucide-react";
 
 // Types
@@ -408,10 +409,27 @@ export default function PrototypeApp({ initialUser }: Props) {
         });
       }
 
-      syncAudit(
-        id ? `Updated ${type}` : `Added ${type}`,
-        formData.name || formData.activity || formData.type || "record"
-      );
+      let resJson: any = null;
+      if (res.ok) {
+        try {
+          resJson = await res.json();
+        } catch {}
+      }
+
+      if (type === "employees" && !id && resJson?.welcomeEmailSent) {
+        syncAudit(
+          "Added Employee & Dispatched Credentials",
+          `${formData.name} (${formData.email})`
+        );
+        window.alert(
+          `Employee added successfully!\n\nAn official welcome email with initial login credentials has been sent to ${formData.email}.`
+        );
+      } else {
+        syncAudit(
+          id ? `Updated ${type}` : `Added ${type}`,
+          formData.name || formData.activity || formData.type || "record"
+        );
+      }
       closeModal();
       loadData();
     } catch (err) {
@@ -1123,7 +1141,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                       required
                     />
                   </div>
-                  <div>
+                  <div className="full-span">
                     <label>
                       {id
                         ? "Reset Password (leave empty to keep current)"
@@ -1136,6 +1154,30 @@ export default function PrototypeApp({ initialUser }: Props) {
                       defaultValue={id ? "" : "VSI@2026"}
                     />
                   </div>
+                  {!id && (
+                    <div
+                      className="full-span"
+                      style={{
+                        background: "#eff6ff",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "8px",
+                        padding: "10px 14px",
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        fontSize: "12px",
+                        color: "#1e40af",
+                      }}
+                    >
+                      <Mail
+                        size={16}
+                        style={{ color: "#3b82f6", flexShrink: 0 }}
+                      />
+                      <span>
+                        <strong>Automated Email Notification:</strong> Upon saving, an official welcome email containing these login credentials and portal access instructions will be sent automatically to the employee&apos;s email address.
+                      </span>
+                    </div>
+                  )}
                 </>
               )}
 

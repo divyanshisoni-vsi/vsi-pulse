@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { checkRateLimit, rateLimitResponse, getClientIp } from "@/lib/rate-limit";
+import { sendWelcomeEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -203,13 +204,55 @@ export async function POST(req: NextRequest) {
             data: userData,
           });
         } else {
-          const rawPassword = record.password && record.password.trim().length > 0
-            ? record.password.trim()
-            : "VSI@2026";
+          const rawPassword =
+            record.password && record.password.trim().length > 0
+              ? record.password.trim()
+              : "VSI@2026";
           userData.passwordHash = await bcrypt.hash(rawPassword, 12);
 
-          await prisma.user.create({
+          const newUser = await prisma.user.create({
             data: userData,
+          });
+
+          // Automatically dispatch welcome email with credentials via Google Workspace SMTP
+          let emailSent = false;
+          try {
+            await sendWelcomeEmail({
+              to: userData.email,
+              name: userData.name,
+              password: rawPassword,
+              role: userData.jobTitle || "Team Member",
+              team: team.name,
+            });
+            emailSent = true;
+          } catch (mailErr) {
+            console.error("Failed to send welcome email to new employee:", mailErr);
+          }
+
+          // Record audit log
+          prisma.auditLog
+            .create({
+              data: {
+                actorEmail,
+                action: "Added Employee",
+                entityType: "employees",
+                entityId: newUser.id,
+                details: {
+                  name: newUser.name,
+                  email: newUser.email,
+                  role: newUser.jobTitle,
+                  welcomeEmailSent: emailSent,
+                },
+              },
+            })
+            .catch(() => {});
+
+          return NextResponse.json({
+            success: true,
+            welcomeEmailSent: emailSent,
+            message: emailSent
+              ? `Account created and login credentials dispatched to ${userData.email}`
+              : `Account created for ${userData.email}.`,
           });
         }
       } else if (type === "kpis") {
