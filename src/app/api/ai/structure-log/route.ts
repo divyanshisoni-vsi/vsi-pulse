@@ -80,34 +80,48 @@ Return ONLY valid JSON with these exact keys:
 }
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+  const models = [
+    "gemini-3.5-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+  ];
   let lastError = "Gemini request failed";
 
   for (const model of models) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json",
-          },
-        }),
-      }
-    );
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: "application/json",
+            },
+          }),
+        }
+      );
 
-    if (res.ok) {
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text;
-    } else {
-      const errData = await res.json().catch(() => ({}));
-      lastError = errData?.error?.message || `Gemini API error (${res.status})`;
-      // Retry next model only if model not found / unsupported
-      if (res.status !== 404 && res.status !== 400) {
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        lastError = errData?.error?.message || `Gemini API error (${res.status})`;
+        // Retry fallback model on model deprecation (404/400), transient overload (503/429), or gateway timeout
+        if (![400, 404, 429, 500, 502, 503, 504].includes(res.status)) {
+          throw new Error(lastError);
+        }
+      }
+    } catch (err: any) {
+      lastError = err?.message || `Request failed for ${model}`;
+      // Only stop early for auth errors (401/403) rethrown above
+      if (lastError.includes("API key not valid") || lastError.includes("PERMISSION_DENIED")) {
         throw new Error(lastError);
       }
     }
