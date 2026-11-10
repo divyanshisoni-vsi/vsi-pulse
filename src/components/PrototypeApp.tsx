@@ -704,6 +704,13 @@ export default function PrototypeApp({ initialUser }: Props) {
   const showCertificate = (id: number, winner: boolean) => {
     const e = person(id);
     if (!e) return;
+    const sc = score(e);
+    if (sc <= 0) {
+      window.alert(
+        "Certificate generation requires verified performance achievement above 0%."
+      );
+      return;
+    }
     const certDate = new Date().toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
@@ -777,15 +784,10 @@ export default function PrototypeApp({ initialUser }: Props) {
                     </div>
                   </div>
 
-                  {/* Footer: Signatures & Gold Seal */}
+                  {/* Footer: Official Gold Seal (Signatories kept empty until configured) */}
                   <div className="cert-footer-layout">
-                    {/* Left Signature */}
-                    <div className="sig-column">
-                      <div className="sig-script-sign">Rohith Kumar</div>
-                      <div className="sig-rule-line"></div>
-                      <div className="sig-title-label">Head of Operations</div>
-                      <div className="sig-org-label">Virtual Solutions India</div>
-                    </div>
+                    {/* Left Signature (kept empty until configured) */}
+                    <div className="sig-column"></div>
 
                     {/* Center Gold Seal */}
                     <div className="seal-column">
@@ -800,13 +802,8 @@ export default function PrototypeApp({ initialUser }: Props) {
                       <div className="seal-ribbon-tail right"></div>
                     </div>
 
-                    {/* Right Signature */}
-                    <div className="sig-column">
-                      <div className="sig-script-sign">Executive Board</div>
-                      <div className="sig-rule-line"></div>
-                      <div className="sig-title-label">Director of Performance</div>
-                      <div className="sig-org-label">VSI Corporate Oversight</div>
-                    </div>
+                    {/* Right Signature (kept empty until configured) */}
+                    <div className="sig-column"></div>
                   </div>
 
                   {/* Certificate Serial & Date */}
@@ -2271,15 +2268,31 @@ export default function PrototypeApp({ initialUser }: Props) {
                                     </span>
                                   </td>
                                   <td>
-                                    <button
-                                      className="btn-secondary btn-sm"
-                                      onClick={() =>
-                                        showCertificate(e.id, winners.some((w) => w.id === e.id))
-                                      }
-                                    >
-                                      <Printer size={13} />
-                                      <span>View</span>
-                                    </button>
+                                    {sc > 0 ? (
+                                      <button
+                                        className="btn-secondary btn-sm"
+                                        onClick={() =>
+                                          showCertificate(e.id, winners.some((w) => w.id === e.id))
+                                        }
+                                      >
+                                        <Printer size={13} />
+                                        <span>View</span>
+                                      </button>
+                                    ) : (
+                                      <span
+                                        style={{
+                                          fontSize: "12px",
+                                          color: "#94a3b8",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                        }}
+                                        title="Certificates unlock once verified performance exceeds 0%"
+                                      >
+                                        <Lock size={12} />
+                                        <span>Requires &gt;0%</span>
+                                      </span>
+                                    )}
                                   </td>
                                 </tr>
                               );
@@ -3475,15 +3488,27 @@ export default function PrototypeApp({ initialUser }: Props) {
                                 </span>
                               </td>
                               <td>
-                                <button
-                                  className="btn-secondary btn-sm"
-                                  onClick={() =>
-                                    showCertificate(e.id, winners.some((w) => w.id === e.id))
-                                  }
-                                >
-                                  <Printer size={13} />
-                                  <span>Generate Certificate</span>
-                                </button>
+                                {sc > 0 ? (
+                                  <button
+                                    className="btn-secondary btn-sm"
+                                    onClick={() =>
+                                      showCertificate(e.id, winners.some((w) => w.id === e.id))
+                                    }
+                                  >
+                                    <Printer size={13} />
+                                    <span>Generate Certificate</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn-secondary btn-sm"
+                                    disabled
+                                    style={{ opacity: 0.5, cursor: "not-allowed" }}
+                                    title="Verified performance above 0% required to generate certificate"
+                                  >
+                                    <Lock size={12} />
+                                    <span>Requires &gt;0%</span>
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );

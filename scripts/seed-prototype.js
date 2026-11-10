@@ -36,7 +36,7 @@ async function seedPrototypeData() {
     { name: 'Divyanshi Soni', email: 'divyanshi@virtualsolutionsindia.com', team: 'Operations', role: 'Operations & Growth', target: 30, done: 26, status: 'active', accessRole: 'employee' },
     { name: 'Harshita Kansal', email: 'harshita@virtualsolutionsindia.com', team: 'Quality', role: 'Product Tester', target: 25, done: 23, status: 'active', accessRole: 'employee' },
     { name: 'Shruti Shukla', email: 'shruti@virtualsolutionsindia.com', team: 'Quality', role: 'Product QA', target: 40, done: 35, status: 'active', accessRole: 'manager' },
-    { name: 'Rohith', email: 'rohith@virtualsolutionsindia.com', team: 'Development', role: 'Web Developer', target: 15, done: 12, status: 'active', accessRole: 'employee' },
+    { name: 'Demo Developer', email: 'developer@virtualsolutionsindia.com', team: 'Development', role: 'Web Developer', target: 15, done: 12, status: 'active', accessRole: 'employee' },
     { name: 'Demo Lister', email: 'lister@virtualsolutionsindia.com', team: 'Catalog', role: 'Product Listing', target: 30, done: 21, status: 'active', accessRole: 'employee' }
   ];
 
@@ -92,7 +92,7 @@ async function seedPrototypeData() {
     { email: 'shruti@virtualsolutionsindia.com', date: '2026-10-29', activity: 'Reviewed 35 product listings; identified 4 corrections', quantity: 35, status: 'verified', source: 'Demo Slack report' },
     { email: 'harshita@virtualsolutionsindia.com', date: '2026-10-29', activity: 'Completed 23 website test cases', quantity: 23, status: 'verified', source: 'Demo Slack report' },
     { email: 'divyanshi@virtualsolutionsindia.com', date: '2026-10-29', activity: 'Reviewed operations SOPs and documented 26 outcomes', quantity: 26, status: 'verified', source: 'Demo Slack report' },
-    { email: 'rohith@virtualsolutionsindia.com', date: '2026-10-29', activity: 'Worked on website feature; quantity not provided', quantity: 0, status: 'needs_clarification', source: 'Demo Slack report' }
+    { email: 'developer@virtualsolutionsindia.com', date: '2026-10-29', activity: 'Worked on website feature; quantity not provided', quantity: 0, status: 'needs_clarification', source: 'Demo Slack report' }
   ];
   for (const l of rawLogs) {
     const uid = userMap[l.email];
@@ -118,7 +118,7 @@ async function seedPrototypeData() {
     { email: 'divyanshi@virtualsolutionsindia.com', date: '2026-10-29', hours: 8, status: 'present' },
     { email: 'harshita@virtualsolutionsindia.com', date: '2026-10-29', hours: 8.5, status: 'present' },
     { email: 'shruti@virtualsolutionsindia.com', date: '2026-10-29', hours: 7.5, status: 'present' },
-    { email: 'rohith@virtualsolutionsindia.com', date: '2026-10-29', hours: 0, status: 'leave' }
+    { email: 'developer@virtualsolutionsindia.com', date: '2026-10-29', hours: 0, status: 'leave' }
   ];
   for (const a of rawAtt) {
     const uid = userMap[a.email];
@@ -133,8 +133,8 @@ async function seedPrototypeData() {
 
   // Alerts
   const rawAlerts = [
-    { type: 'Incomplete report', text: 'Rohith’s report is missing a measurable quantity.', status: 'open' },
-    { type: 'Attendance', text: 'Rohith: leave recorded in demo attendance.', status: 'resolved' }
+    { type: 'Incomplete report', text: 'Demo Developer’s report is missing a measurable quantity.', status: 'open' },
+    { type: 'Attendance', text: 'Demo Developer: leave recorded in demo attendance.', status: 'resolved' }
   ];
   for (const al of rawAlerts) {
     const existing = await prisma.alert.findFirst({ where: { message: al.text } });
