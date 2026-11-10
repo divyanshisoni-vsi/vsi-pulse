@@ -33,6 +33,7 @@ import {
   KeyRound,
   Lock,
   Mail,
+  Sparkles,
 } from "lucide-react";
 
 // Types
@@ -243,6 +244,352 @@ function ChangePasswordModal({
           </form>
         )}
       </div>
+    </div>
+  );
+}
+
+function DailyLogModal({
+  old,
+  id,
+  isAdmin,
+  sessionEmail,
+  sessionEmployeeId,
+  employees,
+  closeModal,
+  onSave,
+}: {
+  old: Partial<DailyLog>;
+  id?: number;
+  isAdmin: boolean;
+  sessionEmail: string;
+  sessionEmployeeId: number;
+  employees: Employee[];
+  closeModal: () => void;
+  onSave: (recordId: number, data: Record<string, any>) => void;
+}) {
+  const [date, setDate] = useState(
+    old.date || new Date().toISOString().split("T")[0]
+  );
+  const [employeeId, setEmployeeId] = useState<number>(
+    old.employeeId || (!isAdmin ? sessionEmployeeId : employees[0]?.id || 1)
+  );
+  const [activity, setActivity] = useState(old.activity || "");
+  const [quantity, setQuantity] = useState<number>(old.quantity ?? 1);
+  const [status, setStatus] = useState(
+    old.status || (isAdmin ? "Verified" : "Pending")
+  );
+  const [source, setSource] = useState(old.source || "Web Portal Submission");
+  const [notes, setNotes] = useState(old.notes || "");
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiMeta, setAiMeta] = useState<{
+    detectedItems: string[];
+    needsMoreDetail: boolean;
+    clarificationTip: string;
+    previousActivity: string;
+    previousQuantity: number;
+  } | null>(null);
+
+  const selectedEmployee = employees.find((e) => e.id === Number(employeeId));
+
+  async function handleAiStructure() {
+    setAiError("");
+    if (!activity.trim() || activity.trim().length < 3) {
+      setAiError("Please write a short note of what you worked on first.");
+      return;
+    }
+
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/ai/structure-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawText: activity,
+          team: selectedEmployee?.team,
+          role: selectedEmployee?.role,
+        }),
+      });
+      const data = await res.json();
+      setAiLoading(false);
+
+      if (!res.ok) {
+        setAiError(data.error || "Unable to organize activity with AI.");
+        return;
+      }
+
+      setAiMeta({
+        detectedItems: data.detectedItems || [],
+        needsMoreDetail: Boolean(data.needsMoreDetail),
+        clarificationTip: data.clarificationTip || "",
+        previousActivity: activity,
+        previousQuantity: quantity,
+      });
+
+      if (data.structuredActivity) {
+        setActivity(data.structuredActivity);
+      }
+      if (typeof data.estimatedUnits === "number" && data.estimatedUnits > 0) {
+        setQuantity(data.estimatedUnits);
+      }
+    } catch {
+      setAiLoading(false);
+      setAiError("Network error while contacting AI assistant.");
+    }
+  }
+
+  function handleUndoAi() {
+    if (!aiMeta) return;
+    setActivity(aiMeta.previousActivity);
+    setQuantity(aiMeta.previousQuantity);
+    setAiMeta(null);
+    setAiError("");
+  }
+
+  return (
+    <div className="modal-dialog">
+      <div className="modal-head">
+        <h2>{id ? "Edit Daily Activity Log" : "New Daily Activity Log"}</h2>
+        <button className="modal-close-btn" onClick={closeModal}>
+          <X size={18} />
+        </button>
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const finalStatus =
+            !isAdmin && old.status === "Needs clarification"
+              ? "Pending"
+              : status;
+          onSave(id || 0, {
+            date,
+            employeeId: isAdmin ? Number(employeeId) : sessionEmployeeId,
+            activity,
+            quantity: Number(quantity) || 0,
+            status: finalStatus,
+            source,
+            notes,
+          });
+        }}
+      >
+        <div className="modal-content">
+          <div className="modal-form-grid">
+            {old.notes && (
+              <div
+                className="full-span"
+                style={{
+                  background: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  borderRadius: "8px",
+                  padding: "12px 14px",
+                  display: "flex",
+                  gap: "10px",
+                  alignItems: "flex-start",
+                }}
+              >
+                <AlertCircle
+                  size={18}
+                  style={{
+                    color: "#d97706",
+                    flexShrink: 0,
+                    marginTop: "2px",
+                  }}
+                />
+                <div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      color: "#92400e",
+                    }}
+                  >
+                    Manager Clarification Request:
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      color: "#b45309",
+                      marginTop: "2px",
+                    }}
+                  >
+                    {old.notes}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label>Activity Date</label>
+              <input
+                name="date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </div>
+
+            {isAdmin ? (
+              <div>
+                <label>Team Member</label>
+                <select
+                  name="employeeId"
+                  value={employeeId}
+                  onChange={(e) => setEmployeeId(Number(e.target.value))}
+                  required
+                >
+                  {employees.length > 0 ? (
+                    employees.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name} ({e.team})
+                      </option>
+                    ))
+                  ) : (
+                    <option value="1">Primary User</option>
+                  )}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label>Reporting As</label>
+                <input
+                  value={sessionEmail}
+                  disabled
+                  style={{ background: "#f1f5f9" }}
+                />
+              </div>
+            )}
+
+            <div className="full-span">
+              <div className="activity-label-row">
+                <label>Task / Activity Description</label>
+                <button
+                  type="button"
+                  className="btn-ai-organize"
+                  onClick={handleAiStructure}
+                  disabled={aiLoading || !activity.trim()}
+                  title="Format rough notes into clean bullet points and extract completed units"
+                >
+                  <Sparkles size={13} />
+                  <span>{aiLoading ? "Organizing…" : "Structure with AI"}</span>
+                </button>
+              </div>
+              <textarea
+                name="activity"
+                rows={4}
+                value={activity}
+                onChange={(e) => setActivity(e.target.value)}
+                placeholder="Type rough notes (e.g. checked 18 listings fixed 4 pricing errors updated tracker sheet) and click 'Structure with AI'..."
+                required
+              />
+
+              {aiError && (
+                <div className="login-error-msg" style={{ marginTop: "8px" }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                  <span>{aiError}</span>
+                </div>
+              )}
+
+              {aiMeta && (
+                <div className="ai-summary-card">
+                  <div className="ai-summary-header">
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                      <Sparkles size={13} />
+                      Organized with AI — please verify details before saving
+                    </span>
+                    <button
+                      type="button"
+                      className="ai-undo-btn"
+                      onClick={handleUndoAi}
+                    >
+                      Undo
+                    </button>
+                  </div>
+                  {aiMeta.detectedItems.length > 0 && (
+                    <div className="ai-chip-list">
+                      {aiMeta.detectedItems.map((item, idx) => (
+                        <span key={idx} className="ai-chip">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {aiMeta.needsMoreDetail && aiMeta.clarificationTip && (
+                    <div className="ai-tip-box">
+                      <AlertCircle size={13} style={{ flexShrink: 0 }} />
+                      <span>{aiMeta.clarificationTip}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label>Units Completed</label>
+              <input
+                name="quantity"
+                type="number"
+                value={quantity}
+                onChange={(e) => setQuantity(Number(e.target.value))}
+                min="0"
+                required
+              />
+            </div>
+
+            <div>
+              <label>Verification Status</label>
+              <select
+                name="status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                disabled={!isAdmin}
+              >
+                <option value="Verified">Verified</option>
+                <option value="Needs clarification">Needs clarification</option>
+                <option value="Pending">Pending</option>
+              </select>
+            </div>
+
+            <div className="full-span">
+              <label>Source / Channel</label>
+              <input
+                name="source"
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="full-span">
+              <label>
+                {isAdmin
+                  ? "Review Notes / Clarification Feedback"
+                  : "Clarification Details / Response"}
+              </label>
+              <textarea
+                name="notes"
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={
+                  isAdmin
+                    ? "Add feedback or review notes..."
+                    : "Provide sheet link, test case details, or answer questions..."
+                }
+              />
+            </div>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="btn-secondary" onClick={closeModal}>
+            Cancel
+          </button>
+          <button type="submit" className="btn-primary">
+            Save Record
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -1015,12 +1362,27 @@ export default function PrototypeApp({ initialUser }: Props) {
   const editRecordModal = (type: keyof AppDb, id?: number) => {
     if (!isAdmin && type !== "logs" && type !== "attendance") return;
     const old = (db[type] as any[]).find((r) => r.id === id) || {};
+
+    if (type === "logs") {
+      openModal(
+        <DailyLogModal
+          old={old}
+          id={id}
+          isAdmin={isAdmin}
+          sessionEmail={sessionEmail}
+          sessionEmployeeId={sessionEmployeeId}
+          employees={db.employees}
+          closeModal={closeModal}
+          onSave={(recordId, data) => saveRecord("logs", recordId, data)}
+        />
+      );
+      return;
+    }
+
     const title =
       (id ? "Edit " : "New ") +
       (type === "employees"
         ? "Employee Record"
-        : type === "logs"
-        ? "Daily Activity Log"
         : type === "kpis"
         ? "KPI Standard"
         : type === "attendance"
@@ -1053,12 +1415,8 @@ export default function PrototypeApp({ initialUser }: Props) {
                 : val;
             });
 
-            // Default employeeId for Employee role submitting a log
-            if (!isAdmin && type === "logs") {
+            if (!isAdmin && type === "attendance") {
               data["employeeId"] = sessionEmployeeId;
-              if (old.status === "Needs clarification") {
-                data["status"] = "Pending";
-              }
             }
 
             saveRecord(type, id || 0, data);
@@ -1175,152 +1533,6 @@ export default function PrototypeApp({ initialUser }: Props) {
                       </span>
                     </div>
                   )}
-                </>
-              )}
-
-              {type === "logs" && (
-                <>
-                  {old.notes && (
-                    <div
-                      className="full-span"
-                      style={{
-                        background: "#fffbeb",
-                        border: "1px solid #fde68a",
-                        borderRadius: "8px",
-                        padding: "12px 14px",
-                        display: "flex",
-                        gap: "10px",
-                        alignItems: "flex-start",
-                      }}
-                    >
-                      <AlertCircle
-                        size={18}
-                        style={{
-                          color: "#d97706",
-                          flexShrink: 0,
-                          marginTop: "2px",
-                        }}
-                      />
-                      <div>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: 700,
-                            color: "#92400e",
-                          }}
-                        >
-                          Manager Clarification Request:
-                        </div>
-                        <div
-                          style={{
-                            fontSize: "13px",
-                            color: "#b45309",
-                            marginTop: "2px",
-                          }}
-                        >
-                          {old.notes}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label>Activity Date</label>
-                    <input
-                      name="date"
-                      type="date"
-                      defaultValue={
-                        old.date || new Date().toISOString().split("T")[0]
-                      }
-                      required
-                    />
-                  </div>
-                  {isAdmin ? (
-                    <div>
-                      <label>Team Member</label>
-                      <select
-                        name="employeeId"
-                        defaultValue={old.employeeId || db.employees[0]?.id}
-                        required
-                      >
-                        {db.employees.length > 0 ? (
-                          db.employees.map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.name} ({e.team})
-                            </option>
-                          ))
-                        ) : (
-                          <option value="1">Primary User</option>
-                        )}
-                      </select>
-                    </div>
-                  ) : (
-                    <div>
-                      <label>Reporting As</label>
-                      <input
-                        value={sessionEmail}
-                        disabled
-                        style={{ background: "#f1f5f9" }}
-                      />
-                    </div>
-                  )}
-                  <div className="full-span">
-                    <label>Task / Activity Description</label>
-                    <textarea
-                      name="activity"
-                      rows={3}
-                      defaultValue={old.activity || ""}
-                      placeholder="Detail completed deliverables and accomplishments..."
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Units Completed</label>
-                    <input
-                      name="quantity"
-                      type="number"
-                      defaultValue={old.quantity ?? 1}
-                      min="0"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label>Verification Status</label>
-                    <select
-                      name="status"
-                      defaultValue={old.status || (isAdmin ? "Verified" : "Pending")}
-                      disabled={!isAdmin}
-                    >
-                      <option value="Verified">Verified</option>
-                      <option value="Needs clarification">Needs clarification</option>
-                      <option value="Pending">Pending</option>
-                    </select>
-                  </div>
-                  <div className="full-span">
-                    <label>Source / Channel</label>
-                    <input
-                      name="source"
-                      defaultValue={old.source || "Web Portal Submission"}
-                      required
-                    />
-                  </div>
-                  <div className="full-span">
-                    <label>
-                      {isAdmin
-                        ? "Review Notes / Clarification Feedback"
-                        : "Clarification Details / Response"}
-                    </label>
-                    <textarea
-                      name="notes"
-                      rows={2}
-                      defaultValue={old.notes || ""}
-                      placeholder={
-                        isAdmin
-                          ? "Add feedback or review notes..."
-                          : "Provide sheet link, test case details, or answer questions..."
-                      }
-                    />
-                  </div>
                 </>
               )}
 
