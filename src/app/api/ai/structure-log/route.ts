@@ -14,7 +14,37 @@ interface StructuredLogResponse {
 
 function cleanEnvKey(value?: string): string {
   if (!value) return "";
-  return value.trim().replace(/^['"]+|['"]+$/g, "").trim();
+  return value
+    .replace(/\\r|\\n/g, "")
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(/^(?:GEMINI_API_KEY|GOOGLE_GENERATIVE_AI_API_KEY|GOOGLE_API_KEY|OPENAI_API_KEY|GROQ_API_KEY)\s*=\s*/i, "")
+    .replace(/^Bearer\s+/i, "")
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, "")
+    .replace(/\s+/g, "");
+}
+
+function resolveGeminiEnvKey(): { key: string; source: string } {
+  const candidates: Array<[string, string | undefined]> = [
+    ["GEMINI_API_KEY", process.env.GEMINI_API_KEY],
+    ["GOOGLE_GENERATIVE_AI_API_KEY", process.env.GOOGLE_GENERATIVE_AI_API_KEY],
+    ["GOOGLE_API_KEY", process.env.GOOGLE_API_KEY],
+  ];
+  for (const [source, raw] of candidates) {
+    const cleaned = cleanEnvKey(raw);
+    if (cleaned) return { key: cleaned, source };
+  }
+  return { key: "", source: "GEMINI_API_KEY" };
+}
+
+function describeKeyFormat(key: string): string {
+  const prefix = key.startsWith("AQ.")
+    ? "AQ.*"
+    : key.startsWith("AIza")
+      ? "AIza*"
+      : "unexpected prefix";
+  return `length ${key.length}, ${prefix}`;
 }
 
 function cleanJsonText(raw: string): string {
@@ -91,7 +121,7 @@ Return ONLY valid JSON with these exact keys:
 }`;
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+async function callGemini(prompt: string, apiKey: string, keySource: string): Promise<string> {
   const models = [
     "gemini-flash-lite-latest",
     "gemini-3.5-flash-lite",
@@ -106,10 +136,13 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
           signal: AbortSignal.timeout(Math.min(4500, remainingMs)),
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -135,7 +168,17 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
         lastError = "Gemini returned an empty response.";
       } else {
         const errData = await res.json().catch(() => ({}));
-        lastError = errData?.error?.message || `Gemini API error (${res.status})`;
+        const rawMsg = errData?.error?.message || `Gemini API error (${res.status})`;
+        const isCredentialError =
+          rawMsg.includes("API key not valid") ||
+          rawMsg.includes("API_KEY_INVALID") ||
+          rawMsg.includes("PERMISSION_DENIED");
+        if (isCredentialError) {
+          throw new Error(
+            `${rawMsg} (server ${keySource}: ${describeKeyFormat(apiKey)} — update GEMINI_API_KEY in Vercel Environment Variables and Redeploy).`
+          );
+        }
+        lastError = rawMsg;
         // Retry fallback model on model deprecation (404/400), transient overload (503/429), or gateway timeout
         if (![400, 404, 429, 500, 502, 503, 504].includes(res.status)) {
           throw new Error(lastError);
@@ -143,8 +186,11 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       }
     } catch (err: any) {
       lastError = err?.message || `Request failed for ${model}`;
-      // Stop immediately on credential errors (no point retrying another model with an invalid key)
-      if (lastError.includes("API key not valid") || lastError.includes("PERMISSION_DENIED")) {
+      if (
+        lastError.includes("API key not valid") ||
+        lastError.includes("API_KEY_INVALID") ||
+        lastError.includes("PERMISSION_DENIED")
+      ) {
         throw new Error(lastError);
       }
     }
@@ -227,11 +273,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const geminiKey = cleanEnvKey(
-      process.env.GEMINI_API_KEY ||
-        process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-        process.env.GOOGLE_API_KEY
-    );
+    const { key: geminiKey, source: geminiSource } = resolveGeminiEnvKey();
     const groqKey = cleanEnvKey(process.env.GROQ_API_KEY);
     const openaiKey = cleanEnvKey(process.env.OPENAI_API_KEY);
 
@@ -252,7 +294,7 @@ export async function POST(req: NextRequest) {
 
     if (geminiKey) {
       provider = "gemini";
-      rawJsonText = await callGemini(prompt, geminiKey);
+      rawJsonText = await callGemini(prompt, geminiKey, geminiSource);
     } else if (groqKey) {
       provider = "groq";
       rawJsonText = await callOpenAiCompatible(
