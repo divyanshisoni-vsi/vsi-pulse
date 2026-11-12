@@ -29,16 +29,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { currentPassword, newPassword } = body;
 
-    if (!currentPassword || !newPassword) {
+    if (typeof currentPassword !== "string" || typeof newPassword !== "string" || !currentPassword || !newPassword) {
       return NextResponse.json(
         { error: "Both current password and new password are required." },
         { status: 400 }
       );
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.trim().length < 6) {
       return NextResponse.json(
-        { error: "New password must be at least 6 characters long." },
+        { error: "New password must be at least 6 non-space characters long." },
+        { status: 400 }
+      );
+    }
+
+    if (newPassword === currentPassword) {
+      return NextResponse.json(
+        { error: "New password must be different from your current password." },
         { status: 400 }
       );
     }
@@ -73,15 +80,13 @@ export async function POST(req: NextRequest) {
       data: { passwordHash: newHash },
     });
 
-    // Reset rate limit key on successful change
-    prisma.$executeRawUnsafe(
-      `DELETE FROM rate_limits WHERE key = $1`,
-      `change-pwd:${email}`
-    ).catch(console.error);
-
-    // Record audit log asynchronously without blocking response
-    prisma.auditLog
-      .create({
+    // Reset rate limit key and record audit log before returning (serverless-safe)
+    await Promise.allSettled([
+      prisma.$executeRawUnsafe(
+        `DELETE FROM rate_limits WHERE key = $1`,
+        `change-pwd:${email}`
+      ),
+      prisma.auditLog.create({
         data: {
           actorEmail: email,
           action: "Password Changed",
@@ -89,8 +94,8 @@ export async function POST(req: NextRequest) {
           entityId: user.id,
           details: { message: "User successfully updated account password." },
         },
-      })
-      .catch((err) => console.error("Audit log error:", err));
+      }),
+    ]);
 
     return NextResponse.json({
       success: true,

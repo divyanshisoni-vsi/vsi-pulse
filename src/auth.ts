@@ -53,11 +53,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
-        // Reset failed counter upon successful login
-        prisma.$executeRawUnsafe(
-          `DELETE FROM rate_limits WHERE key = $1`,
-          `login-fail:${normalizedEmail}`
-        ).catch(console.error);
+        // Reset failed counter upon successful login before returning (avoid serverless drop)
+        try {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM rate_limits WHERE key = $1`,
+            `login-fail:${normalizedEmail}`
+          );
+        } catch (err) {
+          console.error(err);
+        }
 
         // Exactly 2 roles: Admin (which is manager/admin) and Employee
         const effectiveRole =

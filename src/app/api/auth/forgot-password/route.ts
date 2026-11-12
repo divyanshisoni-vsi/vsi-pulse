@@ -179,15 +179,15 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      if (!newPassword || newPassword.length < 6) {
+      if (typeof newPassword !== "string" || newPassword.trim().length < 6) {
         return NextResponse.json(
-          { error: "New password must be at least 6 characters long." },
+          { error: "New password must be at least 6 non-space characters long." },
           { status: 400 }
         );
       }
 
-      // Fast hashing with 10 rounds
-      const newHash = await bcrypt.hash(newPassword.trim(), 10);
+      // Fast hashing with 10 rounds (keep exact password string consistent with login)
+      const newHash = await bcrypt.hash(newPassword, 10);
 
       const updated = await prisma.user.update({
         where: { email: normalizedEmail },
@@ -195,8 +195,8 @@ export async function POST(req: NextRequest) {
         select: { id: true },
       });
 
-      // Invalidate used code & reset failed attempt counter asynchronously
-      prisma.$transaction([
+      // Invalidate used code, clear rate-limit counters, and record audit event (serverless-safe)
+      await Promise.allSettled([
         prisma.$executeRawUnsafe(
           `DELETE FROM password_reset_tokens WHERE email = $1`,
           normalizedEmail
@@ -205,11 +205,11 @@ export async function POST(req: NextRequest) {
           `DELETE FROM rate_limits WHERE key = $1`,
           `otp-verify:${normalizedEmail}`
         ),
-      ]).catch((err) => console.error("Error clearing token:", err));
-
-      // Record audit event asynchronously
-      prisma.auditLog
-        .create({
+        prisma.$executeRawUnsafe(
+          `DELETE FROM rate_limits WHERE key = $1`,
+          `login-fail:${normalizedEmail}`
+        ),
+        prisma.auditLog.create({
           data: {
             actorEmail: normalizedEmail,
             action: "Password Reset Completed",
@@ -217,8 +217,8 @@ export async function POST(req: NextRequest) {
             entityId: updated.id,
             details: { message: "Account password successfully reset via email recovery code." },
           },
-        })
-        .catch((e) => console.error("Audit log error:", e));
+        }),
+      ]);
 
       return NextResponse.json({
         success: true,
