@@ -50,25 +50,30 @@ model Team {
 }
 
 model User {
-  id             Int        @id @default(autoincrement())
-  name           String
-  email          String     @unique
-  passwordHash   String     @map("password_hash")
-  role           UserRole   @default(employee)
-  status         UserStatus @default(active)
-  teamId         Int?       @map("team_id")
-  jobTitle       String?    @map("job_title")
-  monthlyTarget  Int        @default(0) @map("monthly_target")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+  id                  Int        @id @default(autoincrement())
+  name                String
+  email               String     @unique
+  passwordHash        String     @map("password_hash")
+  role                UserRole   @default(employee)
+  status              UserStatus @default(active)
+  teamId              Int?       @map("team_id")
+  jobTitle            String?    @map("job_title")
+  employmentType      String     @default("full_time") @map("employment_type")
+  onNoticePeriod      Boolean    @default(false) @map("on_notice_period")
+  leaveQuotaOverrides Json?      @map("leave_quota_overrides")
+  monthlyTarget       Int        @default(0) @map("monthly_target")
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @default(now()) @updatedAt @map("updated_at")
 
-  team              Team?       @relation(fields: [teamId], references: [id])
-  dailyLogs         DailyLog[]  @relation("UserLogs")
-  verifiedLogs      DailyLog[]  @relation("VerifiedLogs")
+  team              Team?          @relation(fields: [teamId], references: [id])
+  dailyLogs         DailyLog[]     @relation("UserLogs")
+  verifiedLogs      DailyLog[]     @relation("VerifiedLogs")
   attendance        Attendance[]
-  relatedAlerts     Alert[]     @relation("RelatedUser")
-  resolvedAlerts    Alert[]     @relation("ResolvedBy")
+  relatedAlerts     Alert[]        @relation("RelatedUser")
+  resolvedAlerts    Alert[]        @relation("ResolvedBy")
   auditLogs         AuditLog[]
+  leaveRequests     LeaveRequest[] @relation("UserLeaveRequests")
+  reviewedLeaves    LeaveRequest[] @relation("ReviewedLeaves")
 
   @@map("users")
 }
@@ -178,4 +183,70 @@ model RateLimit {
   resetAt DateTime @map("reset_at")
 
   @@map("rate_limits")
+}
+
+model LeavePolicyConfig {
+  id                              Int      @id @default(autoincrement())
+  policyTitle                     String   @default("Virtual Solutions India (VSI) - HR Policy") @map("policy_title")
+  effectiveDate                   String   @default("2026-07-13") @map("effective_date")
+  issuedBy                        String   @default("HR Department") @map("issued_by")
+  approvedBy                      String   @default("Amit Jain (Managing Director)") @map("approved_by")
+  standardWorkdayHours            Decimal  @default(8) @map("standard_workday_hours") @db.Decimal(4, 2)
+  carryForwardEnabled             Boolean  @default(false) @map("carry_forward_enabled")
+  requireThreeStepProcess         Boolean  @default(true) @map("require_three_step_process")
+  blockLeaveOnNoticePeriod        Boolean  @default(true) @map("block_leave_on_notice_period")
+  unauthorizedDeductionMultiplier Decimal  @default(1.5) @map("unauthorized_deduction_multiplier") @db.Decimal(3, 1)
+  shiftChangeMinNoticeHours       Int      @default(2) @map("shift_change_min_notice_hours")
+  leaveTypes                      Json     @map("leave_types")
+  guidelinesNotes                 Json?    @map("guidelines_notes")
+  updatedBy                       String?  @map("updated_by")
+  updatedAt                       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("leave_policies")
+}
+
+model LeaveRequest {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @map("user_id")
+  leaveTypeKey      String    @map("leave_type_key")
+  leaveTypeName     String    @map("leave_type_name")
+  durationMode      String    @default("full_day") @map("duration_mode")
+  startDate         DateTime  @map("start_date") @db.Date
+  endDate           DateTime  @map("end_date") @db.Date
+  hoursRequested    Decimal   @map("hours_requested") @db.Decimal(6, 2)
+  reason            String
+  handoverNotes     String?   @map("handover_notes")
+  documentRef       String?   @map("document_ref")
+  slackInformed     Boolean   @default(false) @map("slack_informed")
+  hrEmailSent       Boolean   @default(false) @map("hr_email_sent")
+  jibbleApplied     Boolean   @default(false) @map("jibble_applied")
+  status            String    @default("pending")
+  isLwp             Boolean   @default(false) @map("is_lwp")
+  penaltyMultiplier Decimal   @default(1.0) @map("penalty_multiplier") @db.Decimal(3, 1)
+  policyWarnings    Json?     @map("policy_warnings")
+  reviewerNotes     String?   @map("reviewer_notes")
+  reviewedBy        Int?      @map("reviewed_by")
+  reviewedAt        DateTime? @map("reviewed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user     User  @relation("UserLeaveRequests", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("ReviewedLeaves", fields: [reviewedBy], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model PublicHoliday {
+  id           Int      @id @default(autoincrement())
+  date         DateTime @db.Date
+  name         String
+  type         String   @default("Official Holiday")
+  syncedJibble Boolean  @default(true) @map("synced_jibble")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([date])
+  @@map("public_holidays")
 }

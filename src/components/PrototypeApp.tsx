@@ -34,7 +34,19 @@ import {
   Lock,
   Mail,
   Sparkles,
+  SlidersHorizontal,
 } from "lucide-react";
+import LeaveDashboardModule from "./LeaveDashboardModule";
+import {
+  DEFAULT_VSI_LEAVE_POLICY,
+  EMPLOYMENT_TIER_OPTIONS,
+  isHrDepartmentName,
+  EmployeeLeaveOverrides,
+  EmploymentTier,
+  LeavePolicyData,
+  LeaveRequestRecord,
+  PublicHolidayRecord,
+} from "@/lib/leave-policy";
 
 // Types
 export type Employee = {
@@ -44,6 +56,9 @@ export type Employee = {
   team: string;
   role: string;
   accessRole?: "Admin" | "Employee";
+  employmentType?: EmploymentTier;
+  onNoticePeriod?: boolean;
+  leaveQuotaOverrides?: EmployeeLeaveOverrides | null;
   target: number;
   done: number;
   status: string;
@@ -639,6 +654,31 @@ export default function PrototypeApp({ initialUser }: Props) {
 
   const isAdmin = userRole === "Admin";
 
+  const [leavePolicy, setLeavePolicy] = useState<LeavePolicyData>(
+    DEFAULT_VSI_LEAVE_POLICY
+  );
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequestRecord[]>([]);
+  const [publicHolidays, setPublicHolidays] = useState<PublicHolidayRecord[]>([]);
+  const [leavePermissions, setLeavePermissions] = useState<{
+    isAdmin: boolean;
+    isHrDepartment: boolean;
+    canManageLeave: boolean;
+  }>({
+    isAdmin: userRole === "Admin",
+    isHrDepartment: false,
+    canManageLeave: userRole === "Admin",
+  });
+  const [leaveInitialSubTab, setLeaveInitialSubTab] = useState<
+    "overview" | "requests" | "policy" | "holidays"
+  >("overview");
+  const [leaveNavTick, setLeaveNavTick] = useState<number>(0);
+
+  const sessionEmployee = db.employees.find((e) => e.id === sessionEmployeeId);
+  const isHrDepartment =
+    leavePermissions.isHrDepartment || isHrDepartmentName(sessionEmployee?.team);
+  const canManageLeave =
+    isAdmin || leavePermissions.canManageLeave || isHrDepartment;
+
   // Dashboard View Switcher: Performance Overview vs Leave & Attendance Overview
   const [dashboardView, setDashboardView] = useState<"performance" | "leave">("performance");
 
@@ -647,10 +687,6 @@ export default function PrototypeApp({ initialUser }: Props) {
 
   const chartRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstance = useRef<Chart | null>(null);
-  const leaveDoughnutRef = useRef<HTMLCanvasElement | null>(null);
-  const leaveDoughnutInstance = useRef<Chart | null>(null);
-  const leaveBarRef = useRef<HTMLCanvasElement | null>(null);
-  const leaveBarInstance = useRef<Chart | null>(null);
 
   // 7 Navigation Modules (exact prototype naming)
   const navigationItems = [
@@ -658,7 +694,7 @@ export default function PrototypeApp({ initialUser }: Props) {
     { name: "Daily Logs", icon: ClipboardList },
     { name: "KPI & Performance", icon: Target },
     { name: "Employee Directory", icon: Users },
-    { name: "Attendance & Leave", icon: CalendarCheck },
+    { name: "Leave & Attendance", icon: CalendarCheck },
     { name: "Leaderboard & Certificates", icon: Award },
     { name: "Reports & Audit", icon: FileText },
   ];
@@ -677,6 +713,18 @@ export default function PrototypeApp({ initialUser }: Props) {
           alerts: data.alerts || [],
           audit: data.audit || [],
         });
+        if (data.leavePolicy) {
+          setLeavePolicy(data.leavePolicy);
+        }
+        setLeaveRequests(data.leaveRequests || []);
+        setPublicHolidays(data.publicHolidays || []);
+        if (data.permissions) {
+          setLeavePermissions({
+            isAdmin: Boolean(data.permissions.isAdmin),
+            isHrDepartment: Boolean(data.permissions.isHrDepartment),
+            canManageLeave: Boolean(data.permissions.canManageLeave),
+          });
+        }
       }
     } catch (e) {
       console.error("Failed to load data from API:", e);
@@ -749,6 +797,16 @@ export default function PrototypeApp({ initialUser }: Props) {
     );
   };
 
+  const openLeaveModule = (
+    subTab: "overview" | "requests" | "policy" | "holidays" = "overview"
+  ) => {
+    setLeaveInitialSubTab(subTab);
+    setLeaveNavTick((n) => n + 1);
+    setCurrentTab("Leave & Attendance");
+    setSearchQuery("");
+    setMobileMenuOpen(false);
+  };
+
   // CRUD API Handlers
   const saveRecord = async (
     type: keyof AppDb,
@@ -819,7 +877,8 @@ export default function PrototypeApp({ initialUser }: Props) {
   };
 
   const removeRecord = async (type: keyof AppDb, id: number) => {
-    if (!isAdmin && type !== "logs") return;
+    const canDeleteAttendance = type === "attendance" && canManageLeave;
+    if (!isAdmin && type !== "logs" && !canDeleteAttendance) return;
     if (!window.confirm("Confirm deletion of this record?")) return;
 
     try {
@@ -1424,19 +1483,23 @@ export default function PrototypeApp({ initialUser }: Props) {
             const fd = new FormData(e.currentTarget);
             const data: Record<string, any> = {};
             fd.forEach((val, key) => {
-              data[key] = [
-                "target",
-                "done",
-                "quantity",
-                "weight",
-                "hours",
-                "employeeId",
-              ].includes(key)
-                ? Number(val)
-                : val;
+              if (key === "onNoticePeriod") {
+                data[key] = val === "true";
+              } else {
+                data[key] = [
+                  "target",
+                  "done",
+                  "quantity",
+                  "weight",
+                  "hours",
+                  "employeeId",
+                ].includes(key)
+                  ? Number(val)
+                  : val;
+              }
             });
 
-            if (!isAdmin && type === "attendance") {
+            if (!canManageLeave && type === "attendance") {
               data["employeeId"] = sessionEmployeeId;
             }
 
@@ -1488,6 +1551,30 @@ export default function PrototypeApp({ initialUser }: Props) {
                       <option value="Development">Development</option>
                       <option value="Catalog">Catalog</option>
                       <option value="Marketing">Marketing</option>
+                      <option value="HR">HR (Human Resources)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Employment Tier (Leave Policy)</label>
+                    <select
+                      name="employmentType"
+                      defaultValue={old.employmentType || "full_time"}
+                    >
+                      {EMPLOYMENT_TIER_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label>Notice Period Lock (VSI Sec 10)</label>
+                    <select
+                      name="onNoticePeriod"
+                      defaultValue={old.onNoticePeriod ? "true" : "false"}
+                    >
+                      <option value="false">Standard Active (Leaves Permitted)</option>
+                      <option value="true">On Notice Period (Leave Locked)</option>
                     </select>
                   </div>
                   <div>
@@ -1567,6 +1654,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                       <option value="Development">Development</option>
                       <option value="Catalog">Catalog</option>
                       <option value="Marketing">Marketing</option>
+                      <option value="HR">HR</option>
                     </select>
                   </div>
                   <div>
@@ -1621,9 +1709,9 @@ export default function PrototypeApp({ initialUser }: Props) {
                       name="employeeId"
                       defaultValue={
                         old.employeeId ||
-                        (!isAdmin ? sessionEmployeeId : db.employees[0]?.id)
+                        (!canManageLeave ? sessionEmployeeId : db.employees[0]?.id)
                       }
-                      disabled={!isAdmin}
+                      disabled={!canManageLeave}
                       required
                     >
                       {db.employees.length > 0 ? (
@@ -1636,7 +1724,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                         <option value="1">Primary User</option>
                       )}
                     </select>
-                    {!isAdmin && (
+                    {!canManageLeave && (
                       <input
                         type="hidden"
                         name="employeeId"
@@ -1743,26 +1831,6 @@ export default function PrototypeApp({ initialUser }: Props) {
     (e) => score(e) === topScoreValue && topScoreValue > 0
   );
 
-  // Leave & Attendance Analytics calculations
-  const userAttendanceRecords = visibleAttendance();
-  const fullLeaves = userAttendanceRecords.filter(
-    (a) => a.status.toLowerCase() === "leave"
-  ).length;
-  const halfLeaves = userAttendanceRecords.filter(
-    (a) => a.status.toLowerCase().includes("half")
-  ).length;
-  const totalLeavesTaken = fullLeaves + halfLeaves * 0.5;
-  const totalEntitlement = isAdmin ? es.length * 18 : 18;
-  const remainingBalance = Math.max(0, totalEntitlement - totalLeavesTaken);
-  const presentDays = userAttendanceRecords.filter(
-    (a) => a.status.toLowerCase() === "present"
-  ).length;
-  const totalLoggedDays = userAttendanceRecords.length;
-  const attendanceRate =
-    totalLoggedDays > 0
-      ? Math.round(((presentDays + halfLeaves * 0.5) / totalLoggedDays) * 100)
-      : 98;
-
   // Chart setup
   useEffect(() => {
     // 1. Performance Overview Line Chart
@@ -1829,142 +1897,13 @@ export default function PrototypeApp({ initialUser }: Props) {
       }
     }
 
-    // 2. Leave Category Doughnut Chart
-    if (currentTab === "Dashboard" && dashboardView === "leave" && leaveDoughnutRef.current) {
-      if (leaveDoughnutInstance.current) {
-        leaveDoughnutInstance.current.destroy();
-      }
-
-      const ctx = leaveDoughnutRef.current.getContext("2d");
-      if (ctx) {
-        leaveDoughnutInstance.current = new Chart(ctx, {
-          type: "doughnut",
-          data: {
-            labels: ["Casual Leave", "Sick & Medical", "Earned / Privilege", "Unpaid / Other"],
-            datasets: [
-              {
-                data: [8, 5, 4, 1],
-                backgroundColor: ["#3b82f6", "#f59e0b", "#10b981", "#ef4444"],
-                borderColor: "#ffffff",
-                borderWidth: 3,
-                hoverOffset: 6,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: "65%",
-            plugins: {
-              legend: {
-                position: "bottom",
-                labels: {
-                  boxWidth: 10,
-                  boxHeight: 10,
-                  usePointStyle: true,
-                  pointStyle: "circle",
-                  padding: 14,
-                  font: { size: 12, weight: "bold" },
-                  color: "#475569",
-                },
-              },
-              tooltip: {
-                backgroundColor: "#0f172a",
-                padding: 10,
-                cornerRadius: 6,
-                callbacks: {
-                  label: (context) => ` ${context.label}: ${context.raw} Days`,
-                },
-              },
-            },
-          },
-        });
-      }
-    }
-
-    // 3. Weekly Attendance vs Leave Bar Chart
-    if (currentTab === "Dashboard" && dashboardView === "leave" && leaveBarRef.current) {
-      if (leaveBarInstance.current) {
-        leaveBarInstance.current.destroy();
-      }
-
-      const ctx = leaveBarRef.current.getContext("2d");
-      if (ctx) {
-        leaveBarInstance.current = new Chart(ctx, {
-          type: "bar",
-          data: {
-            labels: ["Week 1", "Week 2", "Week 3", "Week 4", "Current"],
-            datasets: [
-              {
-                label: "Present Shifts",
-                data: [20, 22, 21, 23, 19],
-                backgroundColor: "#10b981",
-                borderRadius: 5,
-                borderSkipped: false,
-              },
-              {
-                label: "Absences / Leaves",
-                data: [2, 1, 3, 1, 2],
-                backgroundColor: "#f59e0b",
-                borderRadius: 5,
-                borderSkipped: false,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                position: "top",
-                align: "end",
-                labels: {
-                  boxWidth: 10,
-                  boxHeight: 10,
-                  usePointStyle: true,
-                  pointStyle: "circle",
-                  padding: 12,
-                  font: { size: 11, weight: "bold" },
-                  color: "#64748b",
-                },
-              },
-              tooltip: {
-                backgroundColor: "#0f172a",
-                padding: 10,
-                cornerRadius: 6,
-              },
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                grid: { color: "#f1f5f9" },
-                ticks: { color: "#94a3b8", font: { size: 11 } },
-              },
-              x: {
-                grid: { display: false },
-                ticks: { color: "#94a3b8", font: { size: 11 } },
-              },
-            },
-          },
-        });
-      }
-    }
-
     return () => {
       if (chartInstance.current) {
         chartInstance.current.destroy();
         chartInstance.current = null;
       }
-      if (leaveDoughnutInstance.current) {
-        leaveDoughnutInstance.current.destroy();
-        leaveDoughnutInstance.current = null;
-      }
-      if (leaveBarInstance.current) {
-        leaveBarInstance.current.destroy();
-        leaveBarInstance.current = null;
-      }
     };
-  }, [currentTab, dashboardView, es.length, overallAvg, db.attendance.length]);
+  }, [currentTab, dashboardView, es.length, overallAvg]);
 
   return (
     <div className="app-shell">
@@ -1989,21 +1928,58 @@ export default function PrototypeApp({ initialUser }: Props) {
           {navigationItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.name;
+            const pendingLeaves =
+              item.name === "Leave & Attendance" && canManageLeave
+                ? leaveRequests.filter((r) => r.status === "pending").length
+                : 0;
             return (
               <button
                 key={item.name}
                 className={`nav-item ${isActive ? "active" : ""}`}
                 onClick={() => {
+                  if (item.name === "Leave & Attendance") {
+                    setLeaveInitialSubTab("overview");
+                    setLeaveNavTick((n) => n + 1);
+                  }
                   setCurrentTab(item.name);
                   setSearchQuery("");
                   setMobileMenuOpen(false);
                 }}
               >
                 <Icon size={17} className="icon" />
-                <span>{item.name}</span>
+                <span style={{ flex: 1, textAlign: "left" }}>{item.name}</span>
+                {pendingLeaves > 0 && (
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      padding: "1px 6px",
+                      borderRadius: "999px",
+                      background: "#fef3c7",
+                      color: "#b45309",
+                    }}
+                  >
+                    {pendingLeaves}
+                  </span>
+                )}
               </button>
             );
           })}
+          {canManageLeave && (
+            <button
+              className={`nav-item ${
+                currentTab === "Leave & Attendance" &&
+                leaveInitialSubTab === "policy"
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() => openLeaveModule("policy")}
+              style={{ marginTop: "6px" }}
+            >
+              <SlidersHorizontal size={16} className="icon" />
+              <span>Customize Leave Policy</span>
+            </button>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -2037,6 +2013,28 @@ export default function PrototypeApp({ initialUser }: Props) {
           </div>
 
           <div className="topbar-right">
+            <button
+              type="button"
+              className="topbar-leave-btn"
+              onClick={() => openLeaveModule("overview")}
+              title="Open Leave & Attendance Dashboard"
+            >
+              <CalendarCheck size={14} />
+              <span>Leave Dashboard</span>
+            </button>
+
+            {canManageLeave && (
+              <button
+                type="button"
+                className="topbar-leave-btn"
+                onClick={() => openLeaveModule("policy")}
+                title="Customize VSI Leave Quotas & HR Policy"
+              >
+                <SlidersHorizontal size={14} />
+                <span>Customize Policy</span>
+              </button>
+            )}
+
             {/* User Profile (Role strictly enforced from session) */}
             <div className="user-profile">
               <div className="avatar-badge">
@@ -2048,6 +2046,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                 </span>
                 <span className={`user-role-tag ${isAdmin ? "admin-tag" : "employee-tag"}`}>
                   {userRole}
+                  {isHrDepartment ? " • HR Dept" : ""}
                 </span>
               </div>
             </div>
@@ -2091,8 +2090,8 @@ export default function PrototypeApp({ initialUser }: Props) {
                       ? isAdmin
                         ? "Real-time key performance indicators and organizational health metrics."
                         : "Your personal progress, completed deliverables, and performance benchmarks."
-                      : isAdmin
-                      ? "Real-time workforce attendance, leave balances, and category utilization."
+                      : canManageLeave
+                      ? "Real-time VSI HR leave balances, approval queue, and customizable policy controls."
                       : "Your personal leave balances, entitlement utilization, and shift logs."}
                   </p>
                 </div>
@@ -2119,12 +2118,21 @@ export default function PrototypeApp({ initialUser }: Props) {
                   ) : (
                     <>
                       <button
-                        className="btn-primary"
+                        className="btn-secondary"
                         onClick={() => editRecordModal("attendance")}
                       >
                         <Plus size={15} />
-                        <span>Log Attendance / Leave</span>
+                        <span>Log Attendance</span>
                       </button>
+                      {canManageLeave && (
+                        <button
+                          className="btn-primary"
+                          onClick={() => openLeaveModule("policy")}
+                        >
+                          <SlidersHorizontal size={15} />
+                          <span>Customize Policy</span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2539,427 +2547,25 @@ export default function PrototypeApp({ initialUser }: Props) {
               </div>
             </>
           ) : (
-            <>
-              {/* Leave & Attendance Metric Cards Row */}
-              <div className="metrics-row">
-                <div className="metric-card leave-card-blue">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin ? "Annual Leave Pool" : "Annual Leave Quota"}
-                    </span>
-                    <div
-                      className="metric-icon-wrap"
-                      style={{ color: "#3b82f6" }}
-                    >
-                      <CalendarCheck size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{totalEntitlement} Days</div>
-                  <div className="metric-sub">
-                    <span>
-                      {isAdmin
-                        ? `18 days / member across ${es.length} employees`
-                        : "18 days standard annual allocation"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="metric-card leave-card-amber">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin
-                        ? "Total Leaves Utilized"
-                        : "Leaves Taken This Year"}
-                    </span>
-                    <div
-                      className="metric-icon-wrap"
-                      style={{ color: "#f59e0b" }}
-                    >
-                      <Clock size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{totalLeavesTaken} Days</div>
-                  <div className="metric-sub">
-                    <span>
-                      {totalLeavesTaken === 0
-                        ? "Zero leaves recorded"
-                        : `${fullLeaves} full days, ${halfLeaves} half-day shifts`}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="metric-card leave-card-emerald">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin
-                        ? "Company Net Balance"
-                        : "Remaining Leave Balance"}
-                    </span>
-                    <div
-                      className="metric-icon-wrap"
-                      style={{ color: "#10b981" }}
-                    >
-                      <CheckCircle2 size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{remainingBalance} Days</div>
-                  <div className="metric-sub">
-                    <span>Available for planned time off</span>
-                  </div>
-                </div>
-
-                <div className="metric-card leave-card-purple">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin
-                        ? "Workforce Attendance Rate"
-                        : "Personal Attendance Rate"}
-                    </span>
-                    <div
-                      className="metric-icon-wrap"
-                      style={{ color: "#8b5cf6" }}
-                    >
-                      <Activity size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{attendanceRate}%</div>
-                  <div className="metric-sub">
-                    <span>
-                      {attendanceRate >= 95
-                        ? "Exemplary punctuality"
-                        : "Active presence record"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Colorful Charts Row: Doughnut Category Distribution + Weekly Attendance Bar Chart */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.1fr 1fr",
-                  gap: "20px",
-                }}
-              >
-                {/* Doughnut Chart: Leave Distribution by Category */}
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <Layers size={16} />
-                      <span>Leave Distribution by Category</span>
-                    </div>
-                    <span style={{ fontSize: "12px", color: "#64748b" }}>
-                      Year-to-Date
-                    </span>
-                  </div>
-                  <div className="card-body">
-                    <div
-                      className="chart-container"
-                      style={{ height: "230px" }}
-                    >
-                      <canvas ref={leaveDoughnutRef}></canvas>
-                    </div>
-                    <div className="leave-legend-grid">
-                      <div className="leave-legend-item">
-                        <span className="leave-cat-badge leave-cat-casual">
-                          Casual
-                        </span>
-                        <span className="val">8 Days (45%)</span>
-                      </div>
-                      <div className="leave-legend-item">
-                        <span className="leave-cat-badge leave-cat-sick">
-                          Sick & Medical
-                        </span>
-                        <span className="val">5 Days (28%)</span>
-                      </div>
-                      <div className="leave-legend-item">
-                        <span className="leave-cat-badge leave-cat-earned">
-                          Earned / Privilege
-                        </span>
-                        <span className="val">4 Days (22%)</span>
-                      </div>
-                      <div className="leave-legend-item">
-                        <span className="leave-cat-badge leave-cat-unpaid">
-                          Unpaid / Other
-                        </span>
-                        <span className="val">1 Day (5%)</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bar Chart: Weekly Presence vs Absence */}
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <Activity size={16} />
-                      <span>Weekly Shift vs Leave Ratio</span>
-                    </div>
-                    <span style={{ fontSize: "12px", color: "#64748b" }}>
-                      Rolling 5-Week Cycle
-                    </span>
-                  </div>
-                  <div className="card-body">
-                    <div
-                      className="chart-container"
-                      style={{ height: "295px" }}
-                    >
-                      <canvas ref={leaveBarRef}></canvas>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Team Leave Balances & Quota Utilization */}
-              <div className="card-panel">
-                <div className="card-header">
-                  <div className="card-title">
-                    <Users size={16} />
-                    <span>Team Leave Balances & Quota Utilization</span>
-                  </div>
-                  <button
-                    className="btn-secondary btn-sm"
-                    onClick={() => editRecordModal("attendance")}
-                  >
-                    <Plus size={13} />
-                    <span>Record Leave</span>
-                  </button>
-                </div>
-                <div className="card-body" style={{ padding: 0 }}>
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Employee</th>
-                          <th>Department</th>
-                          <th>Annual Quota</th>
-                          <th>Leaves Taken</th>
-                          <th>Available Balance</th>
-                          <th>Quota Utilization</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {es.map((e) => {
-                          const empAtt = db.attendance.filter(
-                            (a) => a.employeeId === e.id
-                          );
-                          const empUsed =
-                            empAtt.filter(
-                              (a) => a.status.toLowerCase() === "leave"
-                            ).length +
-                            empAtt.filter((a) =>
-                              a.status.toLowerCase().includes("half")
-                            ).length *
-                              0.5;
-                          const empBal = Math.max(0, 18 - empUsed);
-                          const empPct = Math.min(
-                            100,
-                            Math.round((empUsed / 18) * 100)
-                          );
-
-                          return (
-                            <tr key={e.id}>
-                              <td>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "10px",
-                                  }}
-                                >
-                                  <div
-                                    className="avatar-badge"
-                                    style={{
-                                      width: "30px",
-                                      height: "30px",
-                                      fontSize: "11px",
-                                    }}
-                                  >
-                                    {e.name.slice(0, 2).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <div
-                                      style={{
-                                        fontWeight: 600,
-                                        color: "#0f172a",
-                                      }}
-                                    >
-                                      {e.name}
-                                    </div>
-                                    <div
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#64748b",
-                                      }}
-                                    >
-                                      {e.email}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{e.team}</td>
-                              <td>18 Days</td>
-                              <td style={{ fontWeight: 600 }}>
-                                {empUsed} Days
-                              </td>
-                              <td>
-                                <span
-                                  className={`status-pill ${
-                                    empBal > 8
-                                      ? "verified"
-                                      : empBal > 3
-                                      ? "pending"
-                                      : "needs-clarification"
-                                  }`}
-                                >
-                                  {empBal} Days Left
-                                </span>
-                              </td>
-                              <td style={{ minWidth: "150px" }}>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "8px",
-                                  }}
-                                >
-                                  <div
-                                    className="bar-track"
-                                    style={{ flex: 1 }}
-                                  >
-                                    <div
-                                      className="bar-fill"
-                                      style={{
-                                        width: `${empPct}%`,
-                                        background:
-                                          empPct >= 75
-                                            ? "#ef4444"
-                                            : empPct >= 40
-                                            ? "#f59e0b"
-                                            : "#10b981",
-                                      }}
-                                    ></div>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: "11px",
-                                      color: "#64748b",
-                                      width: "32px",
-                                    }}
-                                  >
-                                    {empPct}%
-                                  </span>
-                                </div>
-                              </td>
-                              <td>
-                                <button
-                                  className="btn-secondary btn-sm"
-                                  onClick={() => editRecordModal("attendance")}
-                                >
-                                  <Plus size={13} />
-                                  <span>Request</span>
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Attendance & Leave Activity */}
-              <div className="card-panel">
-                <div className="card-header">
-                  <div className="card-title">
-                    <Clock size={16} />
-                    <span>Recent Attendance & Leave Activity</span>
-                  </div>
-                  <button
-                    className="btn-secondary btn-sm"
-                    onClick={() => setCurrentTab("Attendance & Leave")}
-                  >
-                    <span>View All Logs</span>
-                  </button>
-                </div>
-                <div className="card-body" style={{ padding: 0 }}>
-                  {userAttendanceRecords.length === 0 ? (
-                    <div className="empty-box">
-                      <CheckCircle2 size={32} style={{ color: "#10b981" }} />
-                      <div
-                        className="empty-title"
-                        style={{ marginTop: "10px", fontSize: "14px" }}
-                      >
-                        No Attendance Logs Found
-                      </div>
-                      <div className="empty-desc" style={{ fontSize: "12px" }}>
-                        Log daily presence, work hours, remote shifts, or leave
-                        requests.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Team Member</th>
-                            <th>Hours Logged</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {userAttendanceRecords.slice(0, 5).map((a) => {
-                            const m = person(a.employeeId);
-                            return (
-                              <tr key={a.id}>
-                                <td style={{ fontWeight: 600 }}>{a.date}</td>
-                                <td>{m ? m.name : `Emp #${a.employeeId}`}</td>
-                                <td>{a.hours} hrs</td>
-                                <td>
-                                  <span
-                                    className={`status-pill ${
-                                      a.status.toLowerCase() === "present"
-                                        ? "verified"
-                                        : a.status.toLowerCase() === "leave"
-                                        ? "pending"
-                                        : a.status
-                                            .toLowerCase()
-                                            .includes("half")
-                                        ? "needs-clarification"
-                                        : "rejected"
-                                    }`}
-                                  >
-                                    {a.status}
-                                  </span>
-                                </td>
-                                <td>
-                                  {(isAdmin ||
-                                    a.employeeId === sessionEmployeeId) && (
-                                    <button
-                                      className="btn-secondary btn-sm"
-                                      onClick={() =>
-                                        editRecordModal("attendance", a.id)
-                                      }
-                                    >
-                                      <Edit2 size={13} />
-                                      <span>Edit</span>
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
+            <LeaveDashboardModule
+              key="dashboard-leave-module"
+              employees={canManageLeave ? db.employees : visibleEmployees()}
+              attendance={canManageLeave ? db.attendance : visibleAttendance()}
+              leavePolicy={leavePolicy}
+              leaveRequests={leaveRequests}
+              publicHolidays={publicHolidays}
+              sessionEmployeeId={sessionEmployeeId}
+              isAdmin={isAdmin}
+              canManageLeave={canManageLeave}
+              isHrDepartment={isHrDepartment}
+              searchQuery={searchQuery}
+              initialSubTab="overview"
+              onReloadData={loadData}
+              onOpenAttendanceModal={(recordId) =>
+                editRecordModal("attendance", recordId)
+              }
+              onDeleteAttendance={(id) => removeRecord("attendance", id)}
+            />
           )}
         </>
       )}
@@ -3471,7 +3077,21 @@ export default function PrototypeApp({ initialUser }: Props) {
                                 </div>
                               </td>
                               <td>{e.team}</td>
-                              <td style={{ color: "#334155" }}>{e.role}</td>
+                              <td style={{ color: "#334155" }}>
+                                <div>{e.role}</div>
+                                <div
+                                  style={{
+                                    fontSize: "11px",
+                                    color: "#64748b",
+                                    marginTop: "2px",
+                                  }}
+                                >
+                                  {EMPLOYMENT_TIER_OPTIONS.find(
+                                    (t) => t.value === e.employmentType
+                                  )?.label || "Full-Time Employee"}
+                                  {e.onNoticePeriod ? " • Notice Period" : ""}
+                                </div>
+                              </td>
                               <td>
                                 <span
                                   className={`status-pill ${
@@ -3544,112 +3164,58 @@ export default function PrototypeApp({ initialUser }: Props) {
           )}
 
           {/* =========================================================
-              5. ATTENDANCE & LEAVE MODULE
+              5. LEAVE & ATTENDANCE MODULE
              ========================================================= */}
-          {currentTab === "Attendance & Leave" && (
+          {currentTab === "Leave & Attendance" && (
             <>
               <div className="module-header">
                 <div className="header-text">
-                  <h1>Attendance & Leave Log</h1>
-                  <p>Daily shift verification, duty hours, and absence management.</p>
+                  <h1>Leave & Attendance Dashboard</h1>
+                  <p>
+                    {canManageLeave
+                      ? "VSI HR Policy controls, hour-based quotas, 3-step approval compliance, and holiday management."
+                      : "Apply for leave, monitor your VSI hour balances, and track shift & holiday calendars."}
+                  </p>
                 </div>
                 <div className="header-actions">
                   <button
-                    className="btn-primary"
+                    className="btn-secondary"
                     onClick={() => editRecordModal("attendance")}
                   >
                     <Plus size={15} />
                     <span>Log Attendance</span>
                   </button>
+                  {canManageLeave && (
+                    <button
+                      className="btn-primary"
+                      onClick={() => openLeaveModule("policy")}
+                    >
+                      <SlidersHorizontal size={15} />
+                      <span>Customize Policy</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <div className="card-panel">
-                {filterRows(visibleAttendance(), [
-                  (a) => a.status,
-                  (a) => person(a.employeeId)?.name,
-                ]).length === 0 ? (
-                  <div className="empty-box">
-                    <div className="empty-icon">
-                      <CalendarCheck size={22} />
-                    </div>
-                    <div className="empty-title">No attendance logs found</div>
-                    <div className="empty-desc">
-                      Log daily presence, work hours, remote shifts, or leave requests.
-                    </div>
-                    <button
-                      className="btn-primary"
-                      onClick={() => editRecordModal("attendance")}
-                    >
-                      <Plus size={14} />
-                      <span>Log Attendance Entry</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          {isAdmin && <th>Member</th>}
-                          <th>Duty Hours</th>
-                          <th>Status</th>
-                          {isAdmin && <th>Actions</th>}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filterRows(visibleAttendance(), [
-                          (a) => a.status,
-                          (a) => person(a.employeeId)?.name,
-                        ]).map((a) => (
-                          <tr key={a.id}>
-                            <td style={{ whiteSpace: "nowrap" }}>{a.date}</td>
-                            {isAdmin && (
-                              <td style={{ fontWeight: 600 }}>
-                                {person(a.employeeId)?.name || `ID #${a.employeeId}`}
-                              </td>
-                            )}
-                            <td>{a.hours} hrs</td>
-                            <td>
-                              <span
-                                className={`status-pill ${
-                                  a.status === "Present"
-                                    ? "present"
-                                    : a.status === "Half day"
-                                    ? "half-day"
-                                    : a.status === "Leave"
-                                    ? "leave"
-                                    : "absent"
-                                }`}
-                              >
-                                {a.status}
-                              </span>
-                            </td>
-                            {isAdmin && (
-                              <td>
-                                <div style={{ display: "flex", gap: "6px" }}>
-                                  <button
-                                    className="btn-secondary btn-sm"
-                                    onClick={() => editRecordModal("attendance", a.id)}
-                                  >
-                                    <Edit2 size={13} />
-                                  </button>
-                                  <button
-                                    className="btn-danger btn-sm"
-                                    onClick={() => removeRecord("attendance", a.id)}
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              <LeaveDashboardModule
+                key={`leave-mod-${leaveNavTick}-${leaveInitialSubTab}`}
+                employees={canManageLeave ? db.employees : visibleEmployees()}
+                attendance={canManageLeave ? db.attendance : visibleAttendance()}
+                leavePolicy={leavePolicy}
+                leaveRequests={leaveRequests}
+                publicHolidays={publicHolidays}
+                sessionEmployeeId={sessionEmployeeId}
+                isAdmin={isAdmin}
+                canManageLeave={canManageLeave}
+                isHrDepartment={isHrDepartment}
+                searchQuery={searchQuery}
+                initialSubTab={leaveInitialSubTab}
+                onReloadData={loadData}
+                onOpenAttendanceModal={(recordId) =>
+                  editRecordModal("attendance", recordId)
+                }
+                onDeleteAttendance={(id) => removeRecord("attendance", id)}
+              />
             </>
           )}
 
