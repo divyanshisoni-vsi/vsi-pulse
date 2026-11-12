@@ -311,11 +311,32 @@ function DailyLogModal({
           role: selectedEmployee?.role,
         }),
       });
-      const data = await res.json();
+
+      if (res.redirected || res.url.includes("/login")) {
+        setAiLoading(false);
+        setAiError("Your session expired. Please refresh the page and sign in again.");
+        return;
+      }
+
+      const rawResponse = await res.text();
+      let data: any = null;
+      try {
+        data = rawResponse ? JSON.parse(rawResponse) : null;
+      } catch {
+        data = null;
+      }
       setAiLoading(false);
 
       if (!res.ok) {
-        setAiError(data.error || "Unable to organize activity with AI.");
+        setAiError(
+          data?.error ||
+            `AI assistant returned HTTP ${res.status}. Please try again in a moment.`
+        );
+        return;
+      }
+
+      if (!data) {
+        setAiError("Received an invalid response from the AI assistant.");
         return;
       }
 

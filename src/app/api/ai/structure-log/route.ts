@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { checkRateLimit, rateLimitResponse, getClientIp } from "@/lib/rate-limit";
 
+export const maxDuration = 30;
+
 interface StructuredLogResponse {
   structuredActivity: string;
   estimatedUnits: number;
@@ -10,13 +12,23 @@ interface StructuredLogResponse {
   clarificationTip: string;
 }
 
+function cleanEnvKey(value?: string): string {
+  if (!value) return "";
+  return value.trim().replace(/^['"]+|['"]+$/g, "").trim();
+}
+
 function cleanJsonText(raw: string): string {
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
   if (trimmed.startsWith("```")) {
-    return trimmed
+    trimmed = trimmed
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/, "")
       .trim();
+  }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
   }
   return trimmed;
 }
@@ -81,21 +93,24 @@ Return ONLY valid JSON with these exact keys:
 
 async function callGemini(prompt: string, apiKey: string): Promise<string> {
   const models = [
-    "gemini-3.5-flash-lite",
     "gemini-flash-lite-latest",
+    "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
   ];
+  const deadline = Date.now() + 8000;
   let lastError = "Gemini request failed";
 
   for (const model of models) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs < 1200) break;
+
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(Math.min(4500, remainingMs)),
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
@@ -108,8 +123,16 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 
       if (res.ok) {
         const data = await res.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parts = data?.candidates?.[0]?.content?.parts;
+        const text = Array.isArray(parts)
+          ? parts
+              .filter((p: any) => p && !p.thought && typeof p.text === "string")
+              .map((p: any) => p.text)
+              .join("")
+              .trim()
+          : "";
         if (text) return text;
+        lastError = "Gemini returned an empty response.";
       } else {
         const errData = await res.json().catch(() => ({}));
         lastError = errData?.error?.message || `Gemini API error (${res.status})`;
@@ -120,7 +143,7 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
       }
     } catch (err: any) {
       lastError = err?.message || `Request failed for ${model}`;
-      // Only stop early for auth errors (401/403) rethrown above
+      // Stop immediately on credential errors (no point retrying another model with an invalid key)
       if (lastError.includes("API key not valid") || lastError.includes("PERMISSION_DENIED")) {
         throw new Error(lastError);
       }
@@ -142,6 +165,7 @@ async function callOpenAiCompatible(
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
+    signal: AbortSignal.timeout(7500),
     body: JSON.stringify({
       model,
       temperature: 0.2,
@@ -203,15 +227,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY?.trim();
-    const groqKey = process.env.GROQ_API_KEY?.trim();
-    const openaiKey = process.env.OPENAI_API_KEY?.trim();
+    const geminiKey = cleanEnvKey(
+      process.env.GEMINI_API_KEY ||
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+        process.env.GOOGLE_API_KEY
+    );
+    const groqKey = cleanEnvKey(process.env.GROQ_API_KEY);
+    const openaiKey = cleanEnvKey(process.env.OPENAI_API_KEY);
 
     if (!geminiKey && !groqKey && !openaiKey) {
       return NextResponse.json(
         {
           error:
-            "AI API key is not configured yet. Please add GEMINI_API_KEY (recommended) in your environment settings.",
+            "AI API key is not configured on this server. Add GEMINI_API_KEY in Vercel Environment Variables and redeploy.",
           code: "MISSING_AI_KEY",
         },
         { status: 503 }
