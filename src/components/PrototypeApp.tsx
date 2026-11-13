@@ -1410,48 +1410,10 @@ export default function PrototypeApp({ initialUser }: Props) {
                       .cert-presentation-text { font-size: 11px; letter-spacing: 2.5px; color: #57534e; text-transform: uppercase; margin: 0 0 10px 0; font-weight: 600; }
                       .cert-recipient-hero { font-family: "Georgia", serif; font-style: italic; font-size: 38px; font-weight: 700; color: #0a192f; margin: 8px auto 16px; display: inline-block; padding: 0 36px 8px; border-bottom: 2px solid #b8860b; }
                       .cert-citation-body { font-size: 14px; line-height: 1.6; color: #44403c; max-width: 580px; margin: 0 auto 20px; }
-                      .cert-kpi-plaque { display: inline-flex; align-items: center; gap: 18px; background: #fdfcf9; border: 1px solid #e7d8b5; border-radius: 4px; padding: 10px 22px; margin-bottom: 30px; }
+                      .cert-kpi-plaque { display: inline-flex; align-items: center; gap: 20px; background: #fdfcf9; border: 1px solid #e7d8b5; border-radius: 6px; padding: 12px 26px; margin-bottom: 0; }
                       .plaque-item { font-size: 13px; color: #57534e; }
-                      .plaque-item strong { color: #785208; font-size: 14px; }
-                      .plaque-dot { color: #d4af37; font-size: 10px; }
-                      .cert-footer-layout { display: grid; grid-template-columns: 1fr 150px 1fr; align-items: flex-end; gap: 20px; padding-top: 14px; }
-                      .sig-column { text-align: center; }
-                      .sig-script-sign { font-family: "Brush Script MT", "Segoe Script", cursive, serif; font-size: 28px; color: #1e3a8a; min-height: 36px; margin-bottom: 4px; }
-                      .sig-rule-line { height: 1px; background: #a8a29e; width: 100%; margin: 0 auto 6px; }
-                      .sig-title-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #1c1917; text-transform: uppercase; }
-                      .sig-org-label { font-size: 10px; color: #78716c; }
-                      .seal-column { display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-                      .gold-medallion {
-                        width: 90px;
-                        height: 90px;
-                        border-radius: 50%;
-                        background: radial-gradient(circle at 30% 30%, #fff6cc 0%, #d4af37 45%, #aa771c 80%, #664608 100%);
-                        box-shadow: 0 4px 10px rgba(0,0,0,0.15), inset 0 0 0 3px #f7e7a8, inset 0 0 0 6px #7e560a;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        position: relative;
-                        z-index: 3;
-                      }
-                      .medallion-inner {
-                        width: 74px;
-                        height: 74px;
-                        border-radius: 50%;
-                        border: 1px dashed rgba(255,255,255,0.85);
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        color: #ffffff;
-                        text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-                      }
-                      .medallion-stars { font-size: 9px; letter-spacing: 1.5px; color: #fff; }
-                      .medallion-text { font-size: 9px; font-weight: 800; line-height: 1.1; text-align: center; letter-spacing: 1px; margin: 2px 0; }
-                      .medallion-seal-tag { font-size: 8px; font-weight: 700; letter-spacing: 1px; color: #fff6cc; }
-                      .seal-ribbon-tail { position: absolute; top: 68px; width: 16px; height: 32px; background: #1e3a8a; z-index: 1; }
-                      .seal-ribbon-tail.left { left: 32px; transform: rotate(-15deg); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); }
-                      .seal-ribbon-tail.right { right: 32px; transform: rotate(15deg); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%); }
-                      .cert-meta-footnote { margin-top: 26px; padding-top: 14px; border-top: 1px dotted #d6d3d1; display: flex; align-items: center; justify-content: center; gap: 16px; font-size: 11px; color: #a8a29e; }
+                      .plaque-item strong { color: #785208; font-size: 15px; }
+                      .plaque-dot { color: #d4af37; font-size: 11px; }
                     </style>
                   </head>
                   <body>
