@@ -899,27 +899,42 @@ export default function PrototypeApp({ initialUser }: Props) {
     id: number,
     formData: Record<string, any>
   ) => {
+    // 1. Optimistic Instant UI Update (0ms perceived latency)
+    const tempId = id || -Date.now();
+    const optimisticRecord = {
+      id: tempId,
+      ...formData,
+      quantity: formData.quantity !== undefined ? Number(formData.quantity) || 0 : undefined,
+      hours: formData.hours !== undefined ? Number(formData.hours) || 8 : undefined,
+      target: formData.target !== undefined ? Number(formData.target) || 0 : undefined,
+      weight: formData.weight !== undefined ? Number(formData.weight) || 100 : undefined,
+      status:
+        formData.status ||
+        (type === "logs" ? "Pending" : type === "alerts" ? "Open" : "Active"),
+      source: formData.source || "Web Portal",
+    };
+
+    setDb((prev) => {
+      const list = [...(prev[type] as any[])];
+      const idx = list.findIndex((x) => x.id === id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...optimisticRecord, id };
+      } else {
+        list.unshift(optimisticRecord);
+      }
+      return { ...prev, [type]: list };
+    });
+
+    // Close modal immediately so UI feels instantaneous
+    closeModal();
+
+    // 2. Persist in background
     try {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "saveRecord", type, id, record: formData }),
       });
-
-      if (!res.ok) {
-        // If API fails (e.g. backend offline), update local frontend state gracefully
-        const fallbackId = id || Date.now();
-        setDb((prev) => {
-          const list = [...(prev[type] as any[])];
-          const idx = list.findIndex((x) => x.id === id);
-          if (idx >= 0) {
-            list[idx] = { ...list[idx], ...formData };
-          } else {
-            list.unshift({ id: fallbackId, ...formData });
-          }
-          return { ...prev, [type]: list };
-        });
-      }
 
       let resJson: any = null;
       if (res.ok) {
@@ -942,23 +957,12 @@ export default function PrototypeApp({ initialUser }: Props) {
           formData.name || formData.activity || formData.type || "record"
         );
       }
-      closeModal();
+      // Revalidate in background to get server-assigned ID & synchronized state
       loadData();
     } catch (err) {
       console.error("Save error:", err);
-      // Fallback local update
-      const fallbackId = id || Date.now();
-      setDb((prev) => {
-        const list = [...(prev[type] as any[])];
-        const idx = list.findIndex((x) => x.id === id);
-        if (idx >= 0) {
-          list[idx] = { ...list[idx], ...formData };
-        } else {
-          list.unshift({ id: fallbackId, ...formData });
-        }
-        return { ...prev, [type]: list };
-      });
-      closeModal();
+      // Fallback local revalidation
+      loadData();
     }
   };
 
@@ -966,6 +970,13 @@ export default function PrototypeApp({ initialUser }: Props) {
     const canDeleteAttendance = type === "attendance" && canManageLeave;
     if (!isAdmin && type !== "logs" && !canDeleteAttendance) return;
     if (!window.confirm("Confirm deletion of this record?")) return;
+
+    // 1. Optimistic removal (instant 0ms response)
+    const backupDb = db;
+    setDb((prev) => ({
+      ...prev,
+      [type]: (prev[type] as any[]).filter((x) => x.id !== id),
+    }));
 
     try {
       await fetch("/api/data", {
@@ -977,16 +988,24 @@ export default function PrototypeApp({ initialUser }: Props) {
       loadData();
     } catch (err) {
       console.error("Delete error:", err);
-      // Fallback local remove
-      setDb((prev) => ({
-        ...prev,
-        [type]: (prev[type] as any[]).filter((x) => x.id !== id),
-      }));
+      // Revert if error
+      setDb(backupDb);
+      alert("Failed to delete record from database.");
     }
   };
 
   const toggleAlert = async (id: number) => {
     if (!isAdmin) return;
+    // 1. Instant optimistic toggle (0ms)
+    setDb((prev) => ({
+      ...prev,
+      alerts: prev.alerts.map((a) =>
+        a.id === id
+          ? { ...a, status: a.status === "Open" ? "Resolved" : "Open" }
+          : a
+      ),
+    }));
+
     try {
       await fetch("/api/data", {
         method: "POST",
@@ -997,20 +1016,14 @@ export default function PrototypeApp({ initialUser }: Props) {
       loadData();
     } catch (err) {
       console.error("Alert toggle error:", err);
-      setDb((prev) => ({
-        ...prev,
-        alerts: prev.alerts.map((a) =>
-          a.id === id
-            ? { ...a, status: a.status === "Open" ? "Resolved" : "Open" }
-            : a
-        ),
-      }));
+      loadData();
     }
   };
 
   // 1-Click Fast Verification (Admin)
   const quickVerify = async (id: number) => {
     try {
+      // 1. Instant optimistic update (0ms)
       setDb((prev) => ({
         ...prev,
         logs: prev.logs.map((l) =>
@@ -1925,7 +1938,13 @@ export default function PrototypeApp({ initialUser }: Props) {
     // 1. Performance Overview Line Chart
     if (currentTab === "Dashboard" && dashboardView === "performance" && chartRef.current) {
       if (chartInstance.current) {
-        chartInstance.current.destroy();
+        chartInstance.current.data.labels = trendSeries.labels;
+        if (chartInstance.current.data.datasets[0]) {
+          chartInstance.current.data.datasets[0].data = trendSeries.values;
+          chartInstance.current.data.datasets[0].label = `Performance Benchmark (%) — ${resolvedPerfRange.shortLabel}`;
+        }
+        chartInstance.current.update("none");
+        return;
       }
 
       const ctx = chartRef.current.getContext("2d");

@@ -172,6 +172,8 @@ export default function LeaderboardCertificatesModule({
     0
   );
 
+  const aiCache = useRef<Record<string, AssessmentResult>>({});
+
   const isRangeStale =
     aiResult !== null &&
     (aiResult.range.preset !== resolvedRange.preset ||
@@ -180,11 +182,26 @@ export default function LeaderboardCertificatesModule({
 
   const runAssessment = async (
     mode: "individual" | "team",
-    targetId?: number
+    targetId?: number,
+    forceRefresh = false
   ) => {
     const resolvedEmpId = targetId || selectedEmpId || sessionEmployeeId;
     if (mode === "individual" && resolvedEmpId) {
       setSelectedEmpId(resolvedEmpId);
+    }
+
+    const cacheKey = `${mode}_${mode === "individual" ? resolvedEmpId : "team"}_${perfPreset}_${
+      perfPreset === "custom" ? `${customStart}_${customEnd}` : ""
+    }`;
+
+    // Instant 0ms cache hit
+    if (!forceRefresh && aiCache.current[cacheKey]) {
+      setAiResult(aiCache.current[cacheKey]);
+      setAiError(null);
+      setTimeout(() => {
+        aiPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 40);
+      return;
     }
 
     setLoadingMode(mode);
@@ -212,6 +229,7 @@ export default function LeaderboardCertificatesModule({
       if (!res.ok) {
         setAiError(data?.error || "Failed to generate AI assessment.");
       } else {
+        aiCache.current[cacheKey] = data as AssessmentResult;
         setAiResult(data as AssessmentResult);
       }
     } catch {

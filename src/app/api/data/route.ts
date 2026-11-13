@@ -31,7 +31,17 @@ export async function GET() {
       publicHolidayRows,
     ] = await Promise.all([
       prisma.user.findMany({
-        include: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          jobTitle: true,
+          employmentType: true,
+          onNoticePeriod: true,
+          leaveQuotaOverrides: true,
+          monthlyTarget: true,
+          status: true,
           team: { select: { name: true } },
           dailyLogs: {
             where: { status: "verified" },
@@ -41,23 +51,60 @@ export async function GET() {
         orderBy: { id: "asc" },
       }),
       prisma.dailyLog.findMany({
-        include: { user: { select: { name: true } } },
+        select: {
+          id: true,
+          logDate: true,
+          userId: true,
+          activity: true,
+          quantity: true,
+          status: true,
+          source: true,
+          notes: true,
+          verifiedBy: true,
+          verifiedAt: true,
+        },
         orderBy: { logDate: "desc" },
       }),
       prisma.attendance.findMany({
-        include: { user: { select: { name: true } } },
+        select: {
+          id: true,
+          date: true,
+          userId: true,
+          hoursWorked: true,
+          status: true,
+        },
         orderBy: { date: "desc" },
       }),
       prisma.kpiStandard.findMany({
-        include: { team: { select: { name: true } } },
+        select: {
+          id: true,
+          name: true,
+          targetValue: true,
+          weightPercent: true,
+          team: { select: { name: true } },
+        },
         orderBy: { id: "asc" },
       }),
       prisma.alert.findMany({
+        select: {
+          id: true,
+          type: true,
+          message: true,
+          status: true,
+        },
         orderBy: { createdAt: "desc" },
+        take: 50,
       }),
       prisma.auditLog.findMany({
+        select: {
+          id: true,
+          createdAt: true,
+          actorEmail: true,
+          action: true,
+          details: true,
+        },
         orderBy: { createdAt: "desc" },
-        take: 30,
+        take: 25,
       }),
       prisma.leavePolicyConfig.findFirst({
         orderBy: { id: "asc" },

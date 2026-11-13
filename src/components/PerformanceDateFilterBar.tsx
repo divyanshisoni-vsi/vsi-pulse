@@ -18,7 +18,7 @@ type Props = {
   onCustomEndChange: (val: string) => void;
 };
 
-export default function PerformanceDateFilterBar({
+function PerformanceDateFilterBarComponent({
   preset,
   customStart,
   customEnd,
@@ -85,3 +85,5 @@ export default function PerformanceDateFilterBar({
     </div>
   );
 }
+
+export default React.memo(PerformanceDateFilterBarComponent);

@@ -211,44 +211,52 @@ export default function LeaveDashboardModule({
           ? [...activeTypes.map((lt) => lt.color || "#3b82f6"), "#dc2626"]
           : activeTypes.map((lt) => lt.color || "#3b82f6");
 
-        typeChartInst.current = new Chart(ctx, {
-          type: "doughnut",
-          data: {
-            labels: chartLabels,
-            datasets: [
-              {
-                data: chartData.every((v) => v === 0) ? [1] : chartData,
-                backgroundColor: chartData.every((v) => v === 0)
-                  ? ["#e2e8f0"]
-                  : chartColors,
-                borderColor: "#ffffff",
-                borderWidth: 2,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: "64%",
-            plugins: {
-              legend: {
-                position: "bottom",
-                labels: {
-                  boxWidth: 10,
-                  boxHeight: 10,
-                  usePointStyle: true,
-                  padding: 12,
-                  font: { size: 11, weight: "bold" },
+        if (typeChartInst.current) {
+          typeChartInst.current.data.labels = chartLabels;
+          if (typeChartInst.current.data.datasets[0]) {
+            typeChartInst.current.data.datasets[0].data = chartData.every((v) => v === 0) ? [1] : chartData;
+            typeChartInst.current.data.datasets[0].backgroundColor = chartData.every((v) => v === 0) ? ["#e2e8f0"] : (chartColors as any);
+          }
+          typeChartInst.current.update("none");
+        } else {
+          typeChartInst.current = new Chart(ctx, {
+            type: "doughnut",
+            data: {
+              labels: chartLabels,
+              datasets: [
+                {
+                  data: chartData.every((v) => v === 0) ? [1] : chartData,
+                  backgroundColor: chartData.every((v) => v === 0)
+                    ? ["#e2e8f0"]
+                    : chartColors,
+                  borderColor: "#ffffff",
+                  borderWidth: 2,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: "64%",
+              plugins: {
+                legend: {
+                  position: "bottom",
+                  labels: {
+                    boxWidth: 10,
+                    boxHeight: 10,
+                    usePointStyle: true,
+                    padding: 12,
+                    font: { size: 11, weight: "bold" },
+                  },
                 },
               },
             },
-          },
-        });
+          });
+        }
       }
     }
 
     if (statusChartRef.current) {
-      if (statusChartInst.current) statusChartInst.current.destroy();
       const ctx = statusChartRef.current.getContext("2d");
       if (ctx) {
         const statusCounts = {
@@ -261,42 +269,50 @@ export default function LeaveDashboardModule({
           Rejected: visibleRequests.filter((r) => r.status === "rejected").length,
         };
 
-        statusChartInst.current = new Chart(ctx, {
-          type: "bar",
-          data: {
-            labels: Object.keys(statusCounts),
-            datasets: [
-              {
-                label: "Requests",
-                data: Object.values(statusCounts),
-                backgroundColor: [
-                  "#10b981",
-                  "#f59e0b",
-                  "#64748b",
-                  "#ef4444",
-                  "#94a3b8",
-                ],
-                borderRadius: 6,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: { stepSize: 1, color: "#64748b", font: { size: 11 } },
-                grid: { color: "#f1f5f9" },
-              },
-              x: {
-                grid: { display: false },
-                ticks: { color: "#64748b", font: { size: 11 } },
+        if (statusChartInst.current) {
+          statusChartInst.current.data.labels = Object.keys(statusCounts);
+          if (statusChartInst.current.data.datasets[0]) {
+            statusChartInst.current.data.datasets[0].data = Object.values(statusCounts);
+          }
+          statusChartInst.current.update("none");
+        } else {
+          statusChartInst.current = new Chart(ctx, {
+            type: "bar",
+            data: {
+              labels: Object.keys(statusCounts),
+              datasets: [
+                {
+                  label: "Requests",
+                  data: Object.values(statusCounts),
+                  backgroundColor: [
+                    "#10b981",
+                    "#f59e0b",
+                    "#64748b",
+                    "#ef4444",
+                    "#94a3b8",
+                  ],
+                  borderRadius: 6,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: { stepSize: 1, color: "#64748b", font: { size: 11 } },
+                  grid: { color: "#f1f5f9" },
+                },
+                x: {
+                  grid: { display: false },
+                  ticks: { color: "#64748b", font: { size: 11 } },
+                },
               },
             },
-          },
-        });
+          });
+        }
       }
     }
 
@@ -310,7 +326,7 @@ export default function LeaveDashboardModule({
         statusChartInst.current = null;
       }
     };
-  }, [subTab, leavePolicy, leaveRequests, employees, searchQuery]);
+  }, [subTab, leavePolicy, leaveRequests, employees]);
 
   async function callLeaveApi(payload: Record<string, any>, successMsg?: string) {
     setBusy(true);
