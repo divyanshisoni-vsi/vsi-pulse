@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { signOut } from "next-auth/react";
 import Chart from "chart.js/auto";
 import {
@@ -37,6 +37,16 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import LeaveDashboardModule from "./LeaveDashboardModule";
+import PerformanceDateFilterBar from "./PerformanceDateFilterBar";
+import LeaderboardCertificatesModule from "./LeaderboardCertificatesModule";
+import {
+  addDaysIso,
+  computeEmployeePeriodMetrics,
+  computePerformanceTrendSeries,
+  getTodayIso,
+  PerformanceDatePreset,
+  resolvePerformanceRange,
+} from "@/lib/performance-analytics";
 import {
   DEFAULT_VSI_LEAVE_POLICY,
   EMPLOYMENT_TIER_OPTIONS,
@@ -682,6 +692,13 @@ export default function PrototypeApp({ initialUser }: Props) {
   // Dashboard View Switcher: Performance Overview vs Leave & Attendance Overview
   const [dashboardView, setDashboardView] = useState<"performance" | "leave">("performance");
 
+  // Performance Tracking Date Range State (All, 7d, 15d, 30d, this_month, custom)
+  const [perfPreset, setPerfPreset] = useState<PerformanceDatePreset>("all");
+  const [perfCustomStart, setPerfCustomStart] = useState<string>(() =>
+    addDaysIso(getTodayIso(), -14)
+  );
+  const [perfCustomEnd, setPerfCustomEnd] = useState<string>(() => getTodayIso());
+
   // Daily Logs Filter: All, Needs clarification, Pending, Verified
   const [logFilter, setLogFilter] = useState<"All" | "Needs clarification" | "Pending" | "Verified">("All");
 
@@ -761,6 +778,75 @@ export default function PrototypeApp({ initialUser }: Props) {
     }
     return db.attendance;
   };
+
+  // Resolved Performance Tracking Range (7d, 15d, 30d, this_month, custom, all)
+  const resolvedPerfRange = useMemo(
+    () => resolvePerformanceRange(perfPreset, perfCustomStart, perfCustomEnd),
+    [perfPreset, perfCustomStart, perfCustomEnd]
+  );
+
+  // Compute period metrics for all employees in DB
+  const employeePeriodMetricsList = useMemo(() => {
+    return db.employees.map((e) =>
+      computeEmployeePeriodMetrics(
+        {
+          id: e.id,
+          name: e.name,
+          email: e.email,
+          team: e.team,
+          role: e.role,
+          target: e.target,
+          done: e.done,
+          status: e.status,
+          employmentType: e.employmentType,
+        },
+        db.logs,
+        db.attendance,
+        resolvedPerfRange
+      )
+    );
+  }, [db.employees, db.logs, db.attendance, resolvedPerfRange]);
+
+  const visiblePeriodMetrics = useMemo(() => {
+    const list = isAdmin
+      ? employeePeriodMetricsList
+      : employeePeriodMetricsList.filter((m) => m.employeeId === sessionEmployeeId);
+    return [...list].sort(
+      (a, b) => b.achievementPct - a.achievementPct || b.periodDone - a.periodDone
+    );
+  }, [employeePeriodMetricsList, isAdmin, sessionEmployeeId]);
+
+  const periodTopScore = visiblePeriodMetrics[0]?.achievementPct || 0;
+  const periodWinnersIds = useMemo(() => {
+    if (periodTopScore <= 0) return [];
+    return visiblePeriodMetrics
+      .filter((m) => m.achievementPct === periodTopScore)
+      .map((m) => m.employeeId);
+  }, [visiblePeriodMetrics, periodTopScore]);
+
+  const periodOverallAvg = visiblePeriodMetrics.length
+    ? Math.round(
+        visiblePeriodMetrics.reduce((acc, m) => acc + m.achievementPct, 0) /
+          visiblePeriodMetrics.length
+      )
+    : 0;
+
+  const periodVerifiedUnits = visiblePeriodMetrics.reduce(
+    (acc, m) => acc + m.periodDone,
+    0
+  );
+  const periodTotalTarget = visiblePeriodMetrics.reduce(
+    (acc, m) => acc + m.periodTarget,
+    0
+  );
+
+  const trendSeries = useMemo(() => {
+    return computePerformanceTrendSeries(
+      isAdmin ? db.employees : db.employees.filter((e) => e.id === sessionEmployeeId),
+      db.logs,
+      resolvedPerfRange
+    );
+  }, [isAdmin, db.employees, sessionEmployeeId, db.logs, resolvedPerfRange]);
 
   const filterRows = <T,>(
     rows: T[],
@@ -1131,10 +1217,13 @@ export default function PrototypeApp({ initialUser }: Props) {
   const showCertificate = (id: number, winner: boolean) => {
     const e = person(id);
     if (!e) return;
-    const sc = score(e);
+    const periodMetric = visiblePeriodMetrics.find((m) => m.employeeId === id);
+    const sc = periodMetric ? periodMetric.achievementPct : score(e);
+    const certDone = periodMetric ? periodMetric.periodDone : e.done;
+    const certTarget = periodMetric ? periodMetric.periodTarget : e.target;
     if (sc <= 0) {
       window.alert(
-        "Certificate generation requires verified performance achievement above 0%."
+        "Certificate generation requires verified performance achievement above 0% in the selected evaluation window."
       );
       return;
     }
@@ -1193,21 +1282,21 @@ export default function PrototypeApp({ initialUser }: Props) {
                   <div className="cert-recipient-hero">{e.name}</div>
                   <p className="cert-citation-body">
                     In recognition of commendable diligence, professional commitment, and exemplary performance serving as{" "}
-                    <strong>{e.role}</strong> in the <strong>{e.team}</strong> Department during the official evaluation cycle.
+                    <strong>{e.role}</strong> in the <strong>{e.team}</strong> Department during the official evaluation cycle ({resolvedPerfRange.shortLabel}).
                   </p>
 
                   {/* KPI Plaque */}
                   <div className="cert-kpi-plaque">
                     <div className="plaque-item">
-                      KPI Achievement: <strong>{score(e)}%</strong>
+                      KPI Achievement: <strong>{sc}%</strong>
                     </div>
                     <span className="plaque-dot">•</span>
                     <div className="plaque-item">
-                      Verified Output: <strong>{e.done} units</strong>
+                      Verified Output: <strong>{certDone} units</strong>
                     </div>
                     <span className="plaque-dot">•</span>
                     <div className="plaque-item">
-                      Monthly Target: <strong>{e.target} units</strong>
+                      Evaluation Target: <strong>{certTarget} units</strong>
                     </div>
                   </div>
 
@@ -1841,17 +1930,14 @@ export default function PrototypeApp({ initialUser }: Props) {
 
       const ctx = chartRef.current.getContext("2d");
       if (ctx) {
-        const trendData =
-          es.length > 0 ? [55, 68, 74, overallAvg] : [0, 0, 0, 0];
-
         chartInstance.current = new Chart(ctx, {
           type: "line",
           data: {
-            labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
+            labels: trendSeries.labels,
             datasets: [
               {
-                label: "Performance Benchmark (%)",
-                data: trendData,
+                label: `Performance Benchmark (%) — ${resolvedPerfRange.shortLabel}`,
+                data: trendSeries.values,
                 borderColor: "#2563eb",
                 backgroundColor: "rgba(37, 99, 235, 0.08)",
                 fill: true,
@@ -1903,7 +1989,7 @@ export default function PrototypeApp({ initialUser }: Props) {
         chartInstance.current = null;
       }
     };
-  }, [currentTab, dashboardView, es.length, overallAvg]);
+  }, [currentTab, dashboardView, trendSeries, resolvedPerfRange.shortLabel]);
 
   return (
     <div className="app-shell">
@@ -2218,335 +2304,357 @@ export default function PrototypeApp({ initialUser }: Props) {
 
               {dashboardView === "performance" ? (
                 <>
+                  {/* Unified Date Range Filter for Performance Tracking */}
+                  <PerformanceDateFilterBar
+                    preset={perfPreset}
+                    customStart={perfCustomStart}
+                    customEnd={perfCustomEnd}
+                    resolvedRange={resolvedPerfRange}
+                    onPresetChange={setPerfPreset}
+                    onCustomStartChange={setPerfCustomStart}
+                    onCustomEndChange={setPerfCustomEnd}
+                  />
+
                   {/* Metric Cards Row */}
-              <div className="metrics-row">
-                <div className="metric-card">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin ? "Company KPI Target" : "Your KPI Progress"}
-                    </span>
-                    <div className="metric-icon-wrap">
-                      <TrendingUp size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{overallAvg}%</div>
-                  <div className="metric-sub">
-                    <span>Performance index across targets</span>
-                  </div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-top">
-                    <span className="metric-label">Verified Units Completed</span>
-                    <div className="metric-icon-wrap">
-                      <CheckCircle2 size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{totalVerifiedUnits}</div>
-                  <div className="metric-sub">
-                    <span>Approved deliverable units</span>
-                  </div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-top">
-                    <span className="metric-label">Clarifications Needed</span>
-                    <div className="metric-icon-wrap">
-                      <AlertCircle size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">{pendingClarifications}</div>
-                  <div className="metric-sub">
-                    <span>Logs awaiting review/clarification</span>
-                  </div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-top">
-                    <span className="metric-label">
-                      {isAdmin ? "Active Team Members" : "System Status"}
-                    </span>
-                    <div className="metric-icon-wrap">
-                      <Users size={16} />
-                    </div>
-                  </div>
-                  <div className="metric-value">
-                    {isAdmin ? activeHeadcount : "Active"}
-                  </div>
-                  <div className="metric-sub">
-                    <span>
-                      {isAdmin ? "Registered personnel" : "Account in good standing"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trend Chart & Goal Progress */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "2fr 1fr",
-                  gap: "20px",
-                }}
-              >
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <Activity size={16} />
-                      <span>KPI Achievement Trend</span>
-                    </div>
-                    <span style={{ fontSize: "12px", color: "#64748b" }}>
-                      Rolling 4-Week Cycle
-                    </span>
-                  </div>
-                  <div className="card-body">
-                    <div className="chart-container">
-                      <canvas ref={chartRef}></canvas>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <Target size={16} />
-                      <span>Benchmark Progress</span>
-                    </div>
-                  </div>
-                  <div className="card-body">
-                    {es.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "30px 0" }}>
-                        <p style={{ color: "#94a3b8", fontSize: "13px", margin: 0 }}>
-                          No employee records configured yet.
-                        </p>
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "16px",
-                        }}
-                      >
-                        {es.slice(0, 4).map((e) => {
-                          const sc = score(e);
-                          return (
-                            <div key={e.id}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  fontSize: "12px",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                <span style={{ fontWeight: 600, color: "#1e293b" }}>
-                                  {e.name}
-                                </span>
-                                <span style={{ color: "#64748b" }}>
-                                  {e.done} / {e.target} ({sc}%)
-                                </span>
-                              </div>
-                              <div className="bar-track">
-                                <div
-                                  className="bar-fill"
-                                  style={{
-                                    width: `${sc}%`,
-                                    background:
-                                      sc >= 85
-                                        ? "#10b981"
-                                        : sc >= 60
-                                        ? "#2563eb"
-                                        : "#f59e0b",
-                                  }}
-                                ></div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Center & Top Performers */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "20px",
-                }}
-              >
-                {/* Active Alerts */}
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <AlertCircle size={16} />
-                      <span>Operational Notices & Alerts</span>
-                    </div>
-                    {isAdmin && (
-                      <button
-                        className="btn-secondary btn-sm"
-                        onClick={() => editRecordModal("alerts")}
-                      >
-                        <Plus size={13} />
-                        <span>New Alert</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="card-body" style={{ padding: 0 }}>
-                    {db.alerts.length === 0 ? (
-                      <div className="empty-box">
-                        <CheckCircle2 size={32} style={{ color: "#10b981" }} />
-                        <div
-                          className="empty-title"
-                          style={{ marginTop: "10px", fontSize: "14px" }}
-                        >
-                          All Systems Normal
-                        </div>
-                        <div className="empty-desc" style={{ fontSize: "12px" }}>
-                          No pending operational alerts or bottlenecks reported.
+                  <div className="metrics-row">
+                    <div className="metric-card">
+                      <div className="metric-top">
+                        <span className="metric-label">
+                          {isAdmin ? "Company Performance Score" : "Your Performance Score"}
+                        </span>
+                        <div className="metric-icon-wrap">
+                          <TrendingUp size={16} />
                         </div>
                       </div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="data-table">
-                          <thead>
-                            <tr>
-                              <th>Type</th>
-                              <th>Message</th>
-                              <th>Status</th>
-                              {isAdmin && <th>Action</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {db.alerts.slice(0, 5).map((a) => (
-                              <tr key={a.id}>
-                                <td style={{ fontWeight: 600 }}>{a.type}</td>
-                                <td>{a.text}</td>
-                                <td>
-                                  <span
-                                    className={`status-pill ${
-                                      a.status === "Open" ? "needs-clarification" : "verified"
-                                    }`}
-                                  >
-                                    {a.status}
-                                  </span>
-                                </td>
-                                {isAdmin && (
-                                  <td>
-                                    <button
-                                      className="btn-secondary btn-sm"
-                                      onClick={() => toggleAlert(a.id)}
-                                    >
-                                      {a.status === "Open" ? "Resolve" : "Reopen"}
-                                    </button>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="metric-value">{periodOverallAvg}%</div>
+                      <div className="metric-sub">
+                        <span>{resolvedPerfRange.shortLabel}</span>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Top Performers */}
-                <div className="card-panel">
-                  <div className="card-header">
-                    <div className="card-title">
-                      <Award size={16} />
-                      <span>Top Performers</span>
                     </div>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => setCurrentTab("Leaderboard & Certificates")}
-                    >
-                      <span>View all</span>
-                    </button>
-                  </div>
-                  <div className="card-body" style={{ padding: 0 }}>
-                    {topSortedEmployees.length === 0 ? (
-                      <div className="empty-box">
-                        <Award size={32} style={{ color: "#94a3b8" }} />
-                        <div
-                          className="empty-title"
-                          style={{ marginTop: "10px", fontSize: "14px" }}
-                        >
-                          No Standings Yet
-                        </div>
-                        <div className="empty-desc" style={{ fontSize: "12px" }}>
-                          Standings update as daily activities are logged and approved.
+
+                    <div className="metric-card">
+                      <div className="metric-top">
+                        <span className="metric-label">Verified Deliverable Units</span>
+                        <div className="metric-icon-wrap">
+                          <CheckCircle2 size={16} />
                         </div>
                       </div>
-                    ) : (
-                      <div className="table-responsive">
-                        <table className="data-table">
-                          <thead>
-                            <tr>
-                              <th>Member</th>
-                              <th>Team</th>
-                              <th>Achievement</th>
-                              <th>Certificate</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {topSortedEmployees.slice(0, 5).map((e) => {
-                              const sc = score(e);
+                      <div className="metric-value">
+                        {periodVerifiedUnits}{" "}
+                        <span style={{ fontSize: "13px", fontWeight: 500, color: "#64748b" }}>
+                          / {periodTotalTarget}
+                        </span>
+                      </div>
+                      <div className="metric-sub">
+                        <span>
+                          {resolvedPerfRange.dayCount
+                            ? `${resolvedPerfRange.dayCount}d tracking target`
+                            : "Approved deliverable units"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-top">
+                        <span className="metric-label">Clarifications Needed</span>
+                        <div className="metric-icon-wrap">
+                          <AlertCircle size={16} />
+                        </div>
+                      </div>
+                      <div className="metric-value">{pendingClarifications}</div>
+                      <div className="metric-sub">
+                        <span>Logs awaiting review/clarification</span>
+                      </div>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-top">
+                        <span className="metric-label">
+                          {isAdmin ? "Active Team Members" : "System Status"}
+                        </span>
+                        <div className="metric-icon-wrap">
+                          <Users size={16} />
+                        </div>
+                      </div>
+                      <div className="metric-value">
+                        {isAdmin ? activeHeadcount : "Active"}
+                      </div>
+                      <div className="metric-sub">
+                        <span>
+                          {isAdmin ? "Registered personnel" : "Account in good standing"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trend Chart & Goal Progress */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "2fr 1fr",
+                      gap: "20px",
+                    }}
+                  >
+                    <div className="card-panel">
+                      <div className="card-header">
+                        <div className="card-title">
+                          <Activity size={16} />
+                          <span>KPI Achievement Trend</span>
+                        </div>
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          {resolvedPerfRange.label}
+                        </span>
+                      </div>
+                      <div className="card-body">
+                        <div className="chart-container">
+                          <canvas ref={chartRef}></canvas>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card-panel">
+                      <div className="card-header">
+                        <div className="card-title">
+                          <Target size={16} />
+                          <span>Benchmark Progress</span>
+                        </div>
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          {resolvedPerfRange.shortLabel}
+                        </span>
+                      </div>
+                      <div className="card-body">
+                        {visiblePeriodMetrics.length === 0 ? (
+                          <div style={{ textAlign: "center", padding: "30px 0" }}>
+                            <p style={{ color: "#94a3b8", fontSize: "13px", margin: 0 }}>
+                              No employee records configured yet.
+                            </p>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "16px",
+                            }}
+                          >
+                            {visiblePeriodMetrics.slice(0, 4).map((m) => {
                               return (
-                                <tr key={e.id}>
-                                  <td style={{ fontWeight: 600 }}>{e.name}</td>
-                                  <td>{e.team}</td>
-                                  <td>
-                                    <span
-                                      className={`status-pill ${
-                                        sc >= 85 ? "verified" : "pending"
-                                      }`}
-                                    >
-                                      {sc}% Score
+                                <div key={m.employeeId}>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      fontSize: "12px",
+                                      marginBottom: "6px",
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 600, color: "#1e293b" }}>
+                                      {m.name}
                                     </span>
-                                  </td>
-                                  <td>
-                                    {sc > 0 ? (
-                                      <button
-                                        className="btn-secondary btn-sm"
-                                        onClick={() =>
-                                          showCertificate(e.id, winners.some((w) => w.id === e.id))
-                                        }
-                                      >
-                                        <Printer size={13} />
-                                        <span>View</span>
-                                      </button>
-                                    ) : (
-                                      <span
-                                        style={{
-                                          fontSize: "12px",
-                                          color: "#94a3b8",
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          gap: "4px",
-                                        }}
-                                        title="Certificates unlock once verified performance exceeds 0%"
-                                      >
-                                        <Lock size={12} />
-                                        <span>Requires &gt;0%</span>
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
+                                    <span style={{ color: "#64748b" }}>
+                                      {m.periodDone} / {m.periodTarget} ({m.achievementPct}%)
+                                    </span>
+                                  </div>
+                                  <div className="bar-track">
+                                    <div
+                                      className="bar-fill"
+                                      style={{
+                                        width: `${m.achievementPct}%`,
+                                        background:
+                                          m.achievementPct >= 85
+                                            ? "#10b981"
+                                            : m.achievementPct >= 60
+                                            ? "#2563eb"
+                                            : "#f59e0b",
+                                      }}
+                                    ></div>
+                                  </div>
+                                </div>
                               );
                             })}
-                          </tbody>
-                        </table>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
-            </>
-          ) : (
+
+                  {/* Action Center & Top Performers */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "20px",
+                    }}
+                  >
+                    {/* Active Alerts */}
+                    <div className="card-panel">
+                      <div className="card-header">
+                        <div className="card-title">
+                          <AlertCircle size={16} />
+                          <span>Operational Notices & Alerts</span>
+                        </div>
+                        {isAdmin && (
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={() => editRecordModal("alerts")}
+                          >
+                            <Plus size={13} />
+                            <span>New Alert</span>
+                          </button>
+                        )}
+                      </div>
+                      <div className="card-body" style={{ padding: 0 }}>
+                        {db.alerts.length === 0 ? (
+                          <div className="empty-box">
+                            <CheckCircle2 size={32} style={{ color: "#10b981" }} />
+                            <div
+                              className="empty-title"
+                              style={{ marginTop: "10px", fontSize: "14px" }}
+                            >
+                              All Systems Normal
+                            </div>
+                            <div className="empty-desc" style={{ fontSize: "12px" }}>
+                              No pending operational alerts or bottlenecks reported.
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="table-responsive">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Type</th>
+                                  <th>Message</th>
+                                  <th>Status</th>
+                                  {isAdmin && <th>Action</th>}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {db.alerts.slice(0, 5).map((a) => (
+                                  <tr key={a.id}>
+                                    <td style={{ fontWeight: 600 }}>{a.type}</td>
+                                    <td>{a.text}</td>
+                                    <td>
+                                      <span
+                                        className={`status-pill ${
+                                          a.status === "Open" ? "needs-clarification" : "verified"
+                                        }`}
+                                      >
+                                        {a.status}
+                                      </span>
+                                    </td>
+                                    {isAdmin && (
+                                      <td>
+                                        <button
+                                          className="btn-secondary btn-sm"
+                                          onClick={() => toggleAlert(a.id)}
+                                        >
+                                          {a.status === "Open" ? "Resolve" : "Reopen"}
+                                        </button>
+                                      </td>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Top Performers */}
+                    <div className="card-panel">
+                      <div className="card-header">
+                        <div className="card-title">
+                          <Award size={16} />
+                          <span>Top Performers ({resolvedPerfRange.shortLabel})</span>
+                        </div>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => setCurrentTab("Leaderboard & Certificates")}
+                        >
+                          <span>View all</span>
+                        </button>
+                      </div>
+                      <div className="card-body" style={{ padding: 0 }}>
+                        {visiblePeriodMetrics.length === 0 ? (
+                          <div className="empty-box">
+                            <Award size={32} style={{ color: "#94a3b8" }} />
+                            <div
+                              className="empty-title"
+                              style={{ marginTop: "10px", fontSize: "14px" }}
+                            >
+                              No Standings Yet
+                            </div>
+                            <div className="empty-desc" style={{ fontSize: "12px" }}>
+                              Standings update as daily activities are logged and approved.
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="table-responsive">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Member</th>
+                                  <th>Team</th>
+                                  <th>Achievement</th>
+                                  <th>Certificate</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {visiblePeriodMetrics.slice(0, 5).map((m) => {
+                                  const isWinner = periodWinnersIds.includes(m.employeeId);
+                                  return (
+                                    <tr key={m.employeeId}>
+                                      <td style={{ fontWeight: 600 }}>{m.name}</td>
+                                      <td>{m.team}</td>
+                                      <td>
+                                        <span
+                                          className={`status-pill ${
+                                            m.achievementPct >= 85 ? "verified" : "pending"
+                                          }`}
+                                        >
+                                          {m.achievementPct}% Score
+                                        </span>
+                                      </td>
+                                      <td>
+                                        {m.achievementPct > 0 ? (
+                                          <button
+                                            className="btn-secondary btn-sm"
+                                            onClick={() =>
+                                              showCertificate(m.employeeId, isWinner)
+                                            }
+                                          >
+                                            <Printer size={13} />
+                                            <span>View</span>
+                                          </button>
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "12px",
+                                              color: "#94a3b8",
+                                              display: "inline-flex",
+                                              alignItems: "center",
+                                              gap: "4px",
+                                            }}
+                                            title="Certificates unlock once verified performance exceeds 0%"
+                                          >
+                                            <Lock size={12} />
+                                            <span>Requires &gt;0%</span>
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
             <LeaveDashboardModule
               key="dashboard-leave-module"
               employees={canManageLeave ? db.employees : visibleEmployees()}
@@ -3223,101 +3331,23 @@ export default function PrototypeApp({ initialUser }: Props) {
               6. LEADERBOARD & CERTIFICATES MODULE
              ========================================================= */}
           {currentTab === "Leaderboard & Certificates" && (
-            <>
-              <div className="module-header">
-                <div className="header-text">
-                  <h1>Performance Leaderboard & Certificates</h1>
-                  <p>
-                    Ranked achievement, performance recognition, and verified certificates.
-                  </p>
-                </div>
-              </div>
-
-              <div className="card-panel">
-                {filterRows(topSortedEmployees, [
-                  (e) => e.name,
-                  (e) => e.team,
-                ]).length === 0 ? (
-                  <div className="empty-box">
-                    <div className="empty-icon">
-                      <Award size={22} />
-                    </div>
-                    <div className="empty-title">No leaderboard standings available</div>
-                    <div className="empty-desc">
-                      Leaderboard ranks are compiled as employees record verified performance against targets.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Rank</th>
-                          <th>Team Member</th>
-                          <th>Department</th>
-                          <th>Target vs Achieved</th>
-                          <th>Achievement</th>
-                          <th>Recognition</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filterRows(topSortedEmployees, [
-                          (e) => e.name,
-                          (e) => e.team,
-                        ]).map((e, index) => {
-                          const sc = score(e);
-                          const isTop = index === 0 && sc > 0;
-                          return (
-                            <tr key={e.id}>
-                              <td style={{ fontWeight: 700, color: isTop ? "#d97706" : "#64748b" }}>
-                                #{index + 1}
-                              </td>
-                              <td style={{ fontWeight: 600 }}>{e.name}</td>
-                              <td>{e.team}</td>
-                              <td>
-                                {e.done} / {e.target} units
-                              </td>
-                              <td>
-                                <span
-                                  className={`status-pill ${
-                                    sc >= 85 ? "verified" : "pending"
-                                  }`}
-                                >
-                                  {sc}% Achieved
-                                </span>
-                              </td>
-                              <td>
-                                {sc > 0 ? (
-                                  <button
-                                    className="btn-secondary btn-sm"
-                                    onClick={() =>
-                                      showCertificate(e.id, winners.some((w) => w.id === e.id))
-                                    }
-                                  >
-                                    <Printer size={13} />
-                                    <span>Generate Certificate</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    className="btn-secondary btn-sm"
-                                    disabled
-                                    style={{ opacity: 0.5, cursor: "not-allowed" }}
-                                    title="Verified performance above 0% required to generate certificate"
-                                  >
-                                    <Lock size={12} />
-                                    <span>Requires &gt;0%</span>
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </>
+            <LeaderboardCertificatesModule
+              rankedMetrics={visiblePeriodMetrics}
+              winnersIds={periodWinnersIds}
+              isAdmin={isAdmin}
+              sessionEmployeeId={sessionEmployeeId}
+              searchQuery={searchQuery}
+              perfPreset={perfPreset}
+              customStart={perfCustomStart}
+              customEnd={perfCustomEnd}
+              resolvedRange={resolvedPerfRange}
+              onPresetChange={setPerfPreset}
+              onCustomStartChange={setPerfCustomStart}
+              onCustomEndChange={setPerfCustomEnd}
+              onGenerateCertificate={(employeeId, isWinner) =>
+                showCertificate(employeeId, isWinner)
+              }
+            />
           )}
 
           {/* =========================================================

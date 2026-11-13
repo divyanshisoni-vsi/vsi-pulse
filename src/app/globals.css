@@ -1848,6 +1848,245 @@ button {
   color: #1d4ed8;
 }
 
+/* =========================================================
+   PERFORMANCE DATE RANGE FILTER & TRACKING BAR
+   ========================================================= */
+.perf-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.perf-filter-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.perf-filter-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.perf-preset-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.perf-preset-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.perf-preset-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.perf-preset-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.perf-filter-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.perf-custom-dates {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.perf-custom-dates label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+  margin: 0 !important;
+}
+
+.perf-custom-dates input[type="date"] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: #0f172a;
+  background: #f8fafc;
+  outline: none;
+}
+
+.perf-custom-dates input[type="date"]:focus {
+  border-color: #2563eb;
+  background: #ffffff;
+}
+
+.perf-range-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  font-size: 11px;
+  color: #1e40af;
+}
+
+.perf-range-pill strong {
+  font-weight: 700;
+}
+
+/* =========================================================
+   AI PERFORMANCE ASSESSMENT & COACHING PANEL
+   ========================================================= */
+.ai-assess-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ai-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.ai-metrics-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-metrics-strip > div span {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ai-metrics-strip > div strong {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ai-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 768px) {
+  .ai-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-feedback-box {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.ai-feedback-box.strengths {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.ai-feedback-box.strengths h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #15803d;
+}
+
+.ai-feedback-box.improve {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.ai-feedback-box.improve h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.ai-feedback-box ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.ai-feedback-box ul li {
+  margin-bottom: 4px;
+}
+
+.ai-feedback-box ul li:last-child {
+  margin-bottom: 0;
+}
+
+.ai-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.ai-action-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+
 
 
 
