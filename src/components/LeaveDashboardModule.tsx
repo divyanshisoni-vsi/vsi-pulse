@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Chart from "chart.js/auto";
 import {
   AlertCircle,
@@ -36,6 +36,9 @@ import {
   evaluateLeaveCompliance,
   getEmploymentTierLabel,
   isHrDepartmentName,
+  LeaveRangePreset,
+  ResolvedLeaveRange,
+  resolveLeaveDateRange,
 } from "@/lib/leave-policy";
 
 export type LeaveEmployee = {
@@ -145,11 +148,45 @@ export default function LeaveDashboardModule({
     return parts.some((p) => (p || "").toLowerCase().includes(q));
   };
 
-  // Compute live employee leave summaries from DB
-  const summariesByEmployee = visibleEmployees.map((emp) => ({
-    employee: emp,
-    summary: computeEmployeeLeaveSummary(emp, leavePolicy, leaveRequests),
-  }));
+  // Date Range / Tracking Year Filter (keeps every year separate & monthly division)
+  const [leavePreset, setLeavePreset] = useState<LeaveRangePreset>("2026");
+  const [leaveCustomStart, setLeaveCustomStart] = useState<string>("2026-01-01");
+  const [leaveCustomEnd, setLeaveCustomEnd] = useState<string>("2026-12-31");
+
+  const resolvedLeaveRange = useMemo(() => {
+    return resolveLeaveDateRange(leavePreset, leaveCustomStart, leaveCustomEnd);
+  }, [leavePreset, leaveCustomStart, leaveCustomEnd]);
+
+  const isDateInWindow = (dateStr?: string | null) => {
+    if (!dateStr || resolvedLeaveRange.preset === "all") return true;
+    const d = dateStr.split("T")[0];
+    return d >= resolvedLeaveRange.startDate && d <= resolvedLeaveRange.endDate;
+  };
+
+  const visibleRequestsInWindow = useMemo(() => {
+    return visibleRequests.filter((r) => isDateInWindow(r.startDate));
+  }, [visibleRequests, resolvedLeaveRange]);
+
+  const visibleAttendanceInWindow = useMemo(() => {
+    return visibleAttendance.filter((a) => isDateInWindow(a.date));
+  }, [visibleAttendance, resolvedLeaveRange]);
+
+  const publicHolidaysInWindow = useMemo(() => {
+    return publicHolidays.filter((h) => isDateInWindow(h.date));
+  }, [publicHolidays, resolvedLeaveRange]);
+
+  // Compute live employee leave summaries from DB scoped to the active year/date range
+  const summariesByEmployee = useMemo(() => {
+    return visibleEmployees.map((emp) => ({
+      employee: emp,
+      summary: computeEmployeeLeaveSummary(
+        emp,
+        leavePolicy,
+        leaveRequests,
+        resolvedLeaveRange
+      ),
+    }));
+  }, [visibleEmployees, leavePolicy, leaveRequests, resolvedLeaveRange]);
 
   const totalQuotaHours = summariesByEmployee.reduce(
     (s, x) => s + x.summary.totalQuotaHours,
@@ -167,17 +204,17 @@ export default function LeaveDashboardModule({
     (s, x) => s + x.summary.lwpHours + x.summary.unauthorizedHours,
     0
   );
-  const pendingCount = visibleRequests.filter((r) => r.status === "pending").length;
+  const pendingCount = visibleRequestsInWindow.filter((r) => r.status === "pending").length;
 
-  const presentAtt = visibleAttendance.filter(
+  const presentAtt = visibleAttendanceInWindow.filter(
     (a) => a.status.toLowerCase() === "present"
   ).length;
-  const halfAtt = visibleAttendance.filter((a) =>
+  const halfAtt = visibleAttendanceInWindow.filter((a) =>
     a.status.toLowerCase().includes("half")
   ).length;
   const attendanceRate =
-    visibleAttendance.length > 0
-      ? Math.round(((presentAtt + halfAtt * 0.5) / visibleAttendance.length) * 100)
+    visibleAttendanceInWindow.length > 0
+      ? Math.round(((presentAtt + halfAtt * 0.5) / visibleAttendanceInWindow.length) * 100)
       : 100;
 
   // Render live Chart.js charts on Overview sub-tab
@@ -260,13 +297,13 @@ export default function LeaveDashboardModule({
       const ctx = statusChartRef.current.getContext("2d");
       if (ctx) {
         const statusCounts = {
-          Approved: visibleRequests.filter((r) => r.status === "approved").length,
-          Pending: visibleRequests.filter((r) => r.status === "pending").length,
-          LWP: visibleRequests.filter((r) => r.status === "lwp").length,
-          "Unauthorised (1.5x)": visibleRequests.filter(
+          Approved: visibleRequestsInWindow.filter((r) => r.status === "approved").length,
+          Pending: visibleRequestsInWindow.filter((r) => r.status === "pending").length,
+          LWP: visibleRequestsInWindow.filter((r) => r.status === "lwp").length,
+          "Unauthorised (1.5x)": visibleRequestsInWindow.filter(
             (r) => r.status === "unauthorized"
           ).length,
-          Rejected: visibleRequests.filter((r) => r.status === "rejected").length,
+          Rejected: visibleRequestsInWindow.filter((r) => r.status === "rejected").length,
         };
 
         if (statusChartInst.current) {
@@ -326,7 +363,7 @@ export default function LeaveDashboardModule({
         statusChartInst.current = null;
       }
     };
-  }, [subTab, leavePolicy, leaveRequests, employees]);
+  }, [subTab, leavePolicy, leaveRequests, employees, resolvedLeaveRange]);
 
   async function callLeaveApi(payload: Record<string, any>, successMsg?: string) {
     setBusy(true);
@@ -381,7 +418,7 @@ export default function LeaveDashboardModule({
       "Reason",
       "Reviewer Notes",
     ];
-    const rows = visibleRequests.map((r) => [
+    const rows = visibleRequestsInWindow.map((r) => [
       r.id,
       r.employeeName || "",
       r.employeeTeam || "",
@@ -410,12 +447,12 @@ export default function LeaveDashboardModule({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "vsi-leave-requests.csv";
+    a.download = `vsi-leave-requests-${resolvedLeaveRange.shortLabel.replace(/[\s/]/g, "_")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  const filteredRequests = visibleRequests
+  const filteredRequests = visibleRequestsInWindow
     .filter((r) => {
       if (requestFilter === "all") return true;
       if (requestFilter === "lwp_unauth")
@@ -432,7 +469,7 @@ export default function LeaveDashboardModule({
       ])
     );
 
-  const filteredAttendance = visibleAttendance.filter((a) =>
+  const filteredAttendance = visibleAttendanceInWindow.filter((a) =>
     matchesQuery([a.status, a.date, employeeLookup(a.employeeId)?.name])
   );
 
@@ -500,6 +537,98 @@ export default function LeaveDashboardModule({
         </div>
       </div>
 
+      {/* Date Range / Year Selector Bar (Keeps each year separate and enables monthly review) */}
+      <div className="perf-filter-bar leave-date-filter-bar" style={{ marginBottom: 0 }}>
+        <div className="perf-filter-left">
+          <span className="perf-filter-title">
+            <Calendar size={14} />
+            <span>Leave Tracking Period:</span>
+          </span>
+          <div className="perf-preset-pills">
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "2026" ? "active" : ""}`}
+              onClick={() => setLeavePreset("2026")}
+              title="Calendar Year 2026 (Jan 1, 2026 – Dec 31, 2026)"
+            >
+              2026 (Current Year)
+            </button>
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "2025" ? "active" : ""}`}
+              onClick={() => setLeavePreset("2025")}
+              title="Calendar Year 2025 Archive"
+            >
+              2025
+            </button>
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "2027" ? "active" : ""}`}
+              onClick={() => setLeavePreset("2027")}
+              title="Calendar Year 2027 Planning"
+            >
+              2027
+            </button>
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "month" ? "active" : ""}`}
+              onClick={() => setLeavePreset("month")}
+              title="Current Month Allowance (Accrued monthly basis: e.g. 1 hr/month for 12 hrs/yr)"
+            >
+              Current Month
+            </button>
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "custom" ? "active" : ""}`}
+              onClick={() => setLeavePreset("custom")}
+              title="Custom Date Range Filter"
+            >
+              Custom Range
+            </button>
+            <button
+              type="button"
+              className={`perf-preset-btn ${leavePreset === "all" ? "active" : ""}`}
+              onClick={() => setLeavePreset("all")}
+              title="All historical records across all years"
+            >
+              All Years
+            </button>
+          </div>
+        </div>
+
+        <div className="perf-filter-right">
+          {leavePreset === "custom" && (
+            <div className="perf-custom-dates">
+              <label>
+                <span>From</span>
+                <input
+                  type="date"
+                  value={leaveCustomStart}
+                  onChange={(e) => setLeaveCustomStart(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>To</span>
+                <input
+                  type="date"
+                  value={leaveCustomEnd}
+                  onChange={(e) => setLeaveCustomEnd(e.target.value)}
+                />
+              </label>
+            </div>
+          )}
+
+          <div className="perf-range-pill" title={resolvedLeaveRange.label}>
+            <strong>{resolvedLeaveRange.shortLabel}</strong>
+            {resolvedLeaveRange.preset !== "all" && (
+              <span>
+                {resolvedLeaveRange.startDate} to {resolvedLeaveRange.endDate}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Sub-navigation Tabs */}
       <div className="log-filter-tabs" style={{ marginBottom: 0 }}>
         <button
@@ -540,7 +669,7 @@ export default function LeaveDashboardModule({
         >
           <Calendar size={13} />
           <span>Public Holidays & Attendance</span>
-          <span className="log-filter-badge">{publicHolidays.length}</span>
+          <span className="log-filter-badge">{publicHolidaysInWindow.length}</span>
         </button>
       </div>
 
@@ -570,7 +699,9 @@ export default function LeaveDashboardModule({
             <div className="metric-card leave-card-blue">
               <div className="metric-top">
                 <span className="metric-label">
-                  {canManageLeave ? "Workforce Leave Allocation" : "Annual Leave Quota"}
+                  {canManageLeave
+                    ? `Workforce Allocation (${resolvedLeaveRange.shortLabel})`
+                    : `Leave Quota (${resolvedLeaveRange.shortLabel})`}
                 </span>
                 <div className="metric-icon-wrap" style={{ color: "#3b82f6" }}>
                   <CalendarCheck size={16} />
@@ -579,8 +710,16 @@ export default function LeaveDashboardModule({
               <div className="metric-value">{totalQuotaHours} hrs</div>
               <div className="metric-sub">
                 <span>
-                  ~{toDays(totalQuotaHours)} workdays across {visibleEmployees.length}{" "}
-                  {visibleEmployees.length === 1 ? "member" : "members"}
+                  ~{toDays(totalQuotaHours)} workdays • Accrual Rate:{" "}
+                  <strong>
+                    {(
+                      totalQuotaHours /
+                      (Math.max(1, resolvedLeaveRange.monthsInPeriod) *
+                        Math.max(1, visibleEmployees.length))
+                    ).toFixed(1)}{" "}
+                    hrs/mo
+                  </strong>{" "}
+                  per member
                 </span>
               </div>
             </div>
@@ -596,8 +735,8 @@ export default function LeaveDashboardModule({
               <div className="metric-sub">
                 <span>
                   {totalLwpHours > 0
-                    ? `${totalLwpHours} hrs LWP / Unapproved`
-                    : `${pendingCount} request(s) awaiting approval`}
+                    ? `${totalLwpHours} hrs LWP in ${resolvedLeaveRange.shortLabel}`
+                    : `${pendingCount} request(s) awaiting approval in ${resolvedLeaveRange.shortLabel}`}
                 </span>
               </div>
             </div>
@@ -612,8 +751,8 @@ export default function LeaveDashboardModule({
               <div className="metric-value">{totalRemainingHours} hrs</div>
               <div className="metric-sub">
                 <span>
-                  ~{toDays(totalRemainingHours)} days • Carry-forward:{" "}
-                  {leavePolicy.carryForwardEnabled ? "Enabled" : "Mgmt approval only"}
+                  Available in {resolvedLeaveRange.shortLabel} • Monthly Accrual Basis:{" "}
+                  {leavePolicy.carryForwardEnabled ? "Carry-Forward ON" : "Yearly Quota"}
                 </span>
               </div>
             </div>
@@ -632,9 +771,9 @@ export default function LeaveDashboardModule({
               </div>
               <div className="metric-sub">
                 <span>
-                  {visibleAttendance.length > 0
-                    ? `${presentAtt} present, ${halfAtt} half-day shifts logged`
-                    : "No attendance anomalies logged"}
+                  {visibleAttendanceInWindow.length > 0
+                    ? `${presentAtt} present, ${halfAtt} half-day shifts in ${resolvedLeaveRange.shortLabel}`
+                    : "No attendance anomalies logged in period"}
                 </span>
               </div>
             </div>
@@ -651,7 +790,7 @@ export default function LeaveDashboardModule({
               <div className="card-header">
                 <div className="card-title">
                   <Layers size={16} />
-                  <span>Leave Hours by Category</span>
+                  <span>Leave Hours by Category — {resolvedLeaveRange.shortLabel}</span>
                 </div>
                 <span style={{ fontSize: "12px", color: "#64748b" }}>Live DB</span>
               </div>
@@ -666,10 +805,10 @@ export default function LeaveDashboardModule({
               <div className="card-header">
                 <div className="card-title">
                   <Clock size={16} />
-                  <span>Request Status & Compliance Breakdown</span>
+                  <span>Request Status & Compliance — {resolvedLeaveRange.shortLabel}</span>
                 </div>
                 <span style={{ fontSize: "12px", color: "#64748b" }}>
-                  {visibleRequests.length} total
+                  {visibleRequestsInWindow.length} total
                 </span>
               </div>
               <div className="card-body">
@@ -685,7 +824,7 @@ export default function LeaveDashboardModule({
             <div className="card-header">
               <div className="card-title">
                 <Users size={16} />
-                <span>Leave Entitlement & Remaining Hours by Employee</span>
+                <span>Leave Entitlement & Remaining Hours by Employee ({resolvedLeaveRange.shortLabel})</span>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
@@ -706,11 +845,39 @@ export default function LeaveDashboardModule({
                       <th>Employee & Tier</th>
                       {leavePolicy.leaveTypes
                         .filter((lt) => lt.active)
-                        .map((lt) => (
-                          <th key={lt.key}>{lt.name.split("/")[0].trim()}</th>
-                        ))}
+                        .map((lt) => {
+                          const normTier: EmploymentTier = "full_time";
+                          const tierDefaultHours = Number(lt.quotas?.[normTier] ?? 0);
+                          const monthlyDefault = Number((tierDefaultHours / 12).toFixed(1));
+                          return (
+                            <th key={lt.key}>
+                              <div>{lt.name.split("/")[0].trim()}</div>
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: "normal",
+                                  color: "#2563eb",
+                                  background: "#eff6ff",
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  display: "inline-block",
+                                  marginTop: "2px",
+                                }}
+                                title="Monthly Accrual Basis Rate"
+                              >
+                                {monthlyDefault}h/mo
+                              </span>
+                            </th>
+                          );
+                        })}
                       <th>LWP / Penalty</th>
-                      <th>Remaining Total</th>
+                      <th>
+                        {resolvedLeaveRange.preset === "month"
+                          ? "Month Remaining"
+                          : resolvedLeaveRange.preset === "custom"
+                            ? "Period Remaining"
+                            : "Year Remaining"}
+                      </th>
                       {canManageLeave && <th>Customize</th>}
                     </tr>
                   </thead>
@@ -769,17 +936,30 @@ export default function LeaveDashboardModule({
                                 <td key={lt.key} style={{ whiteSpace: "nowrap" }}>
                                   {cell && cell.quotaHours > 0 ? (
                                     <div>
-                                      <span style={{ fontWeight: 600 }}>
-                                        {cell.remainingHours}
-                                      </span>
-                                      <span style={{ color: "#64748b", fontSize: "11px" }}>
-                                        /{cell.quotaHours}h
-                                      </span>
+                                      <div>
+                                        <span style={{ fontWeight: 700, fontSize: "13px" }}>
+                                          {cell.remainingHours}
+                                        </span>
+                                        <span style={{ color: "#64748b", fontSize: "11px" }}>
+                                          /{cell.periodQuotaHours}h
+                                        </span>
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "10px",
+                                          color: "#0284c7",
+                                          fontWeight: 600,
+                                          marginTop: "1px",
+                                        }}
+                                        title={`Annual Quota: ${cell.quotaHours}h • Monthly Accrual: ${cell.monthlyQuotaHours}h/mo • Accrued YTD: ${cell.accruedYtdHours}h • Used in ${resolvedLeaveRange.shortLabel}: ${cell.usedHours}h`}
+                                      >
+                                        {cell.monthlyQuotaHours}h/mo
+                                      </div>
                                       {cell.carryForwardHours > 0 && (
                                         <span
                                           style={{
                                             display: "block",
-                                            fontSize: "10px",
+                                            fontSize: "9px",
                                             color: "#0ea5e9",
                                           }}
                                         >
@@ -813,9 +993,20 @@ export default function LeaveDashboardModule({
                                     ? "pending"
                                     : "rejected"
                               }`}
+                              title={`Annual: ${summary.totalAnnualQuotaHours}h • Accrued YTD: ${Object.values(summary.byType).reduce((acc: number, c: any) => acc + (c?.accruedYtdHours || 0), 0).toFixed(1)}h`}
                             >
                               {summary.totalRemainingHours} / {summary.totalQuotaHours} hrs
                             </span>
+                            <div
+                              style={{
+                                fontSize: "10px",
+                                color: "#64748b",
+                                marginTop: "2px",
+                                textAlign: "center",
+                              }}
+                            >
+                              {summary.totalMonthlyQuotaHours}h/mo rate
+                            </div>
                           </td>
                           {canManageLeave && (
                             <td>
@@ -848,7 +1039,7 @@ export default function LeaveDashboardModule({
           <div className="card-header">
             <div className="card-title">
               <Clock size={16} />
-              <span>Leave & Shift Change Requests</span>
+              <span>Leave & Shift Change Requests — {resolvedLeaveRange.shortLabel}</span>
             </div>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
@@ -857,7 +1048,7 @@ export default function LeaveDashboardModule({
                 onClick={exportLeaveCsv}
               >
                 <Download size={13} />
-                <span>Export CSV</span>
+                <span>Export {resolvedLeaveRange.shortLabel} CSV</span>
               </button>
               <button
                 type="button"
@@ -871,6 +1062,22 @@ export default function LeaveDashboardModule({
           </div>
 
           <div className="card-body">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+              <div style={{ fontSize: "12px", color: "#64748b" }}>
+                Showing <strong>{filteredRequests.length}</strong> request(s) in <strong>{resolvedLeaveRange.label}</strong> (Total: {visibleRequests.length})
+              </div>
+              {resolvedLeaveRange.preset !== "all" && (
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  onClick={() => setLeavePreset("all")}
+                  title="View all requests across all years"
+                >
+                  <span>View All Years ({visibleRequests.length})</span>
+                </button>
+              )}
+            </div>
+
             <div className="log-filter-tabs">
               {[
                 { key: "all", label: "All" },
@@ -1377,6 +1584,17 @@ export default function LeaveDashboardModule({
                                 }
                                 style={{ width: "68px", padding: "6px 8px" }}
                               />
+                              <div
+                                style={{
+                                  fontSize: "10px",
+                                  color: "#2563eb",
+                                  marginTop: "2px",
+                                  textAlign: "center",
+                                }}
+                                title="Monthly Basis Allocation: e.g. 12 hrs/yr = 1 hr/month"
+                              >
+                                {(Number(lt.quotas[tier] || 0) / 12).toFixed(1)}h/mo
+                              </div>
                             </td>
                           ))}
                           <td>
@@ -1810,12 +2028,28 @@ function ApplyLeaveModal({
   const [jibbleApplied, setJibbleApplied] = useState<boolean>(false);
   const [autoApprove, setAutoApprove] = useState<boolean>(false);
 
+  const reqYear = useMemo(() => {
+    try {
+      const y = new Date(`${startDate}T00:00:00Z`).getUTCFullYear();
+      return isNaN(y) ? 2026 : y;
+    } catch {
+      return 2026;
+    }
+  }, [startDate]);
+
+  const reqRange = useMemo(() => {
+    const preset = String(reqYear) === "2025" ? "2025" : String(reqYear) === "2027" ? "2027" : "2026";
+    return resolveLeaveDateRange(preset as LeaveRangePreset);
+  }, [reqYear]);
+
   const selectedEmp = employees.find((e) => e.id === Number(userId)) || employees[0];
   const selectedType = activeTypes.find((lt) => lt.key === leaveTypeKey);
   const empSummary = selectedEmp
-    ? computeEmployeeLeaveSummary(selectedEmp, policy, leaveRequests)
+    ? computeEmployeeLeaveSummary(selectedEmp, policy, leaveRequests, reqRange)
     : null;
   const remainingForType = empSummary?.byType[leaveTypeKey]?.remainingHours ?? 0;
+  const quotaForType = empSummary?.byType[leaveTypeKey]?.quotaHours ?? 0;
+  const monthlyForType = empSummary?.byType[leaveTypeKey]?.monthlyQuotaHours ?? 0;
 
   const effEndDate =
     durationMode === "half_day" || durationMode === "shift_change"
@@ -1927,9 +2161,10 @@ function ApplyLeaveModal({
                     {activeTypes.map((lt) => {
                       const avail = empSummary?.byType[lt.key]?.remainingHours ?? 0;
                       const quota = empSummary?.byType[lt.key]?.quotaHours ?? 0;
+                      const monthly = empSummary?.byType[lt.key]?.monthlyQuotaHours ?? 0;
                       return (
                         <option key={lt.key} value={lt.key}>
-                          {lt.name} ({avail}/{quota} hrs left)
+                          {lt.name} ({avail}/{quota} hrs left in {reqYear} • {monthly}h/mo)
                         </option>
                       );
                     })}
@@ -1993,7 +2228,7 @@ function ApplyLeaveModal({
                   }}
                 >
                   <strong>{selectedType.name} Policy:</strong> {selectedType.guideline}{" "}
-                  (Available balance: <strong>{remainingForType} hrs</strong>)
+                  (Year <strong>{reqYear}</strong> Balance: <strong>{remainingForType} hrs</strong> available of {quotaForType} hrs total • <strong>{monthlyForType} hrs/mo</strong> accrual)
                 </div>
               )}
 
@@ -2366,42 +2601,64 @@ function CustomizeEmployeeQuotaModal({
                   <tbody>
                     {policy.leaveTypes
                       .filter((lt) => lt.active)
-                      .map((lt) => (
-                        <tr key={lt.key}>
-                          <td style={{ fontWeight: 600 }}>{lt.name}</td>
-                          <td>{lt.quotas[employmentType]} hrs</td>
-                          <td>
-                            <input
-                              type="number"
-                              min={0}
-                              placeholder={String(lt.quotas[employmentType])}
-                              value={customQuotas[lt.key] ?? ""}
-                              onChange={(e) =>
-                                setCustomQuotas({
-                                  ...customQuotas,
-                                  [lt.key]: e.target.value,
-                                })
-                              }
-                              style={{ width: "100px", padding: "6px 8px" }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              min={0}
-                              placeholder="0"
-                              value={carryForwardHours[lt.key] ?? ""}
-                              onChange={(e) =>
-                                setCarryForwardHours({
-                                  ...carryForwardHours,
-                                  [lt.key]: e.target.value,
-                                })
-                              }
-                              style={{ width: "100px", padding: "6px 8px" }}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      .map((lt) => {
+                        const tierVal = lt.quotas[employmentType] ?? 0;
+                        const customVal = customQuotas[lt.key];
+                        const effVal =
+                          customVal !== undefined && customVal !== ""
+                            ? Number(customVal) || 0
+                            : tierVal;
+                        return (
+                          <tr key={lt.key}>
+                            <td style={{ fontWeight: 600 }}>{lt.name}</td>
+                            <td>
+                              <div>{tierVal} hrs</div>
+                              <div style={{ fontSize: "11px", color: "#64748b" }}>
+                                = {(tierVal / 12).toFixed(2)}h / mo
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                min={0}
+                                placeholder={String(tierVal)}
+                                value={customQuotas[lt.key] ?? ""}
+                                onChange={(e) =>
+                                  setCustomQuotas({
+                                    ...customQuotas,
+                                    [lt.key]: e.target.value,
+                                  })
+                                }
+                                style={{ width: "100px", padding: "6px 8px" }}
+                              />
+                              <div
+                                style={{
+                                  fontSize: "11px",
+                                  color: "#2563eb",
+                                  marginTop: "3px",
+                                }}
+                              >
+                                = {(effVal / 12).toFixed(2)}h / mo
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                min={0}
+                                placeholder="0"
+                                value={carryForwardHours[lt.key] ?? ""}
+                                onChange={(e) =>
+                                  setCarryForwardHours({
+                                    ...carryForwardHours,
+                                    [lt.key]: e.target.value,
+                                  })
+                                }
+                                style={{ width: "100px", padding: "6px 8px" }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>

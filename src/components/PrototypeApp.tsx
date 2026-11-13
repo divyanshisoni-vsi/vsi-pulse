@@ -2198,8 +2198,8 @@ export default function PrototypeApp({ initialUser }: Props) {
                 </button>
               </div>
 
-              {/* Clarification Action Banner */}
-              {myClarificationLogs.length > 0 && (
+              {/* Clarification Action Banner (Only shown on Performance view, never in Leave Section) */}
+              {myClarificationLogs.length > 0 && dashboardView === "performance" && (
                 <div className="clarification-alert-banner">
                   <div className="clarification-banner-left">
                     <AlertCircle size={22} className="alert-icon" />

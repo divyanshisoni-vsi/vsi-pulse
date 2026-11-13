@@ -12,6 +12,7 @@ import {
   isHrOrAdminAccess,
   normalizeEmploymentTier,
   normalizePolicyConfig,
+  resolveLeaveDateRange,
 } from "@/lib/leave-policy";
 
 async function getActorContext(email: string) {
@@ -190,6 +191,13 @@ export async function POST(req: NextRequest) {
         createdAt: r.createdAt.toISOString(),
       }));
 
+      const reqYear =
+        new Date(`${startDateIso}T00:00:00Z`).getUTCFullYear() ||
+        new Date().getUTCFullYear();
+      const reqRange = resolveLeaveDateRange(
+        reqYear === 2026 ? "2026" : reqYear === 2025 ? "2025" : reqYear === 2027 ? "2027" : "all"
+      );
+
       const summary = computeEmployeeLeaveSummary(
         {
           id: targetUser.id,
@@ -198,7 +206,8 @@ export async function POST(req: NextRequest) {
           leaveQuotaOverrides: (targetUser.leaveQuotaOverrides as any) || null,
         },
         policy,
-        mappedExisting
+        mappedExisting,
+        reqRange
       );
 
       const remainingTypeHours = summary.byType[leaveTypeKey]?.remainingHours ?? 0;

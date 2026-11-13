@@ -331,6 +331,142 @@ export function calculateCalendarDaysInclusive(startIso: string, endIso: string)
   return Math.max(1, diff + 1);
 }
 
+export type LeaveRangePreset =
+  | "2026"
+  | "2025"
+  | "2027"
+  | "month"
+  | "custom"
+  | "all";
+
+export type ResolvedLeaveRange = {
+  preset: LeaveRangePreset;
+  year: number;
+  month?: number; // 1-12
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  label: string;
+  shortLabel: string;
+  monthsInPeriod: number;
+  isCurrentYear: boolean;
+  currentMonthIndex: number;
+};
+
+export function calculateMonthsDifference(startIso: string, endIso: string): number {
+  const start = new Date(`${startIso}T00:00:00Z`);
+  const end = new Date(`${endIso}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
+  const yearsDiff = end.getUTCFullYear() - start.getUTCFullYear();
+  const monthsDiff = end.getUTCMonth() - start.getUTCMonth();
+  const daysDiff = (end.getUTCDate() - start.getUTCDate()) / 30;
+  const total = yearsDiff * 12 + monthsDiff + daysDiff;
+  return Math.max(0.25, Number(total.toFixed(2)));
+}
+
+export function resolveLeaveDateRange(
+  preset: LeaveRangePreset,
+  customStart?: string,
+  customEnd?: string,
+  todayIso?: string
+): ResolvedLeaveRange {
+  const refDate = todayIso ? new Date(`${todayIso}T00:00:00Z`) : new Date();
+  const currentYear = refDate.getUTCFullYear();
+  const currentMonthIndex = refDate.getUTCMonth() + 1; // 1-12
+
+  if (preset === "2026") {
+    return {
+      preset: "2026",
+      year: 2026,
+      startDate: "2026-01-01",
+      endDate: "2026-12-31",
+      label: "Calendar Year 2026 (Jan 1, 2026 – Dec 31, 2026)",
+      shortLabel: "Year 2026",
+      monthsInPeriod: 12,
+      isCurrentYear: currentYear === 2026,
+      currentMonthIndex,
+    };
+  }
+
+  if (preset === "2025") {
+    return {
+      preset: "2025",
+      year: 2025,
+      startDate: "2025-01-01",
+      endDate: "2025-12-31",
+      label: "Calendar Year 2025 (Jan 1, 2025 – Dec 31, 2025)",
+      shortLabel: "Year 2025 (Archive)",
+      monthsInPeriod: 12,
+      isCurrentYear: currentYear === 2025,
+      currentMonthIndex: 12,
+    };
+  }
+
+  if (preset === "2027") {
+    return {
+      preset: "2027",
+      year: 2027,
+      startDate: "2027-01-01",
+      endDate: "2027-12-31",
+      label: "Calendar Year 2027 (Jan 1, 2027 – Dec 31, 2027)",
+      shortLabel: "Year 2027",
+      monthsInPeriod: 12,
+      isCurrentYear: currentYear === 2027,
+      currentMonthIndex: 0,
+    };
+  }
+
+  if (preset === "month") {
+    const y = currentYear;
+    const m = currentMonthIndex;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const mm = String(m).padStart(2, "0");
+    const mName = refDate.toLocaleString("en-US", { month: "long" });
+    return {
+      preset: "month",
+      year: y,
+      month: m,
+      startDate: `${y}-${mm}-01`,
+      endDate: `${y}-${mm}-${String(lastDay).padStart(2, "0")}`,
+      label: `${mName} ${y} (Monthly Allowance)`,
+      shortLabel: `${mName} ${y}`,
+      monthsInPeriod: 1,
+      isCurrentYear: true,
+      currentMonthIndex,
+    };
+  }
+
+  if (preset === "custom") {
+    const s = (customStart || `${currentYear}-01-01`).split("T")[0];
+    const e = (customEnd || `${currentYear}-12-31`).split("T")[0];
+    const months = calculateMonthsDifference(s, e);
+    const yr = new Date(`${s}T00:00:00Z`).getUTCFullYear() || currentYear;
+    return {
+      preset: "custom",
+      year: yr,
+      startDate: s,
+      endDate: e,
+      label: `Custom Period (${s} to ${e})`,
+      shortLabel: `${s} to ${e}`,
+      monthsInPeriod: months,
+      isCurrentYear: yr === currentYear,
+      currentMonthIndex,
+    };
+  }
+
+  // All time
+  return {
+    preset: "all",
+    year: currentYear,
+    startDate: "1970-01-01",
+    endDate: "2099-12-31",
+    label: "All Years (Full Record)",
+    shortLabel: "All Years",
+    monthsInPeriod: 12,
+    isCurrentYear: true,
+    currentMonthIndex,
+  };
+}
+
 export function computeEmployeeLeaveSummary(
   employee: {
     id: number;
@@ -339,11 +475,20 @@ export function computeEmployeeLeaveSummary(
     leaveQuotaOverrides?: EmployeeLeaveOverrides | null;
   },
   policy: LeavePolicyData,
-  requests: LeaveRequestRecord[]
+  requests: LeaveRequestRecord[],
+  range?: ResolvedLeaveRange
 ) {
   const tier = normalizeEmploymentTier(employee.employmentType);
   const overrides = employee.leaveQuotaOverrides || {};
-  const empRequests = requests.filter((r) => r.userId === employee.id);
+
+  // Keep data of every year separate by filtering requests to the selected evaluation range
+  const empRequests = requests
+    .filter((r) => r.userId === employee.id)
+    .filter((r) => {
+      if (!range || range.preset === "all") return true;
+      const d = (r.startDate || "").split("T")[0];
+      return d >= range.startDate && d <= range.endDate;
+    });
 
   const byType: Record<
     string,
@@ -353,7 +498,11 @@ export function computeEmployeeLeaveSummary(
       color: string;
       baseHours: number;
       carryForwardHours: number;
-      quotaHours: number;
+      quotaHours: number; // annual quota
+      annualQuotaHours: number;
+      monthlyQuotaHours: number; // monthly division: e.g. 12 hrs/yr = 1 hr/mo
+      accruedYtdHours: number; // accrued through current month
+      periodQuotaHours: number; // quota for active range
       usedHours: number;
       pendingHours: number;
       remainingHours: number;
@@ -361,6 +510,8 @@ export function computeEmployeeLeaveSummary(
   > = {};
 
   let totalQuotaHours = 0;
+  let totalAnnualQuotaHours = 0;
+  let totalMonthlyQuotaHours = 0;
   let totalUsedHours = 0;
   let totalPendingHours = 0;
 
@@ -374,7 +525,26 @@ export function computeEmployeeLeaveSummary(
       ? Math.max(0, Number(overrides.customQuotas?.[lt.key] ?? 0))
       : defaultTierHours;
     const carryForwardHours = Math.max(0, Number(overrides.carryForwardHours?.[lt.key] ?? 0));
-    const quotaHours = baseHours + carryForwardHours;
+    const annualQuotaHours = baseHours + carryForwardHours;
+
+    // Monthly basis division: e.g. 12 hours per year = 1 hour per month
+    const monthlyQuotaHours = Number((annualQuotaHours / 12).toFixed(2));
+
+    // Period quota calculation
+    let periodQuotaHours = annualQuotaHours;
+    if (range?.preset === "month") {
+      periodQuotaHours = monthlyQuotaHours;
+    } else if (range?.preset === "custom") {
+      periodQuotaHours = Number(
+        (monthlyQuotaHours * Math.max(0.25, range.monthsInPeriod)).toFixed(2)
+      );
+    }
+
+    // Accrued YTD (e.g., through Month 11 for November)
+    const curMonth = range?.currentMonthIndex || new Date().getUTCMonth() + 1;
+    const accruedYtdHours = range?.isCurrentYear
+      ? Number((monthlyQuotaHours * Math.min(12, curMonth)).toFixed(2))
+      : annualQuotaHours;
 
     const usedHours = empRequests
       .filter(
@@ -395,7 +565,10 @@ export function computeEmployeeLeaveSummary(
       )
       .reduce((sum, r) => sum + Number(r.hoursRequested || 0), 0);
 
-    const remainingHours = Math.max(0, Number((quotaHours - usedHours).toFixed(2)));
+    const remainingHours = Math.max(
+      0,
+      Number((periodQuotaHours - usedHours).toFixed(2))
+    );
 
     byType[lt.key] = {
       key: lt.key,
@@ -403,13 +576,19 @@ export function computeEmployeeLeaveSummary(
       color: lt.color,
       baseHours,
       carryForwardHours,
-      quotaHours,
+      quotaHours: annualQuotaHours,
+      annualQuotaHours,
+      monthlyQuotaHours,
+      accruedYtdHours,
+      periodQuotaHours,
       usedHours,
       pendingHours,
       remainingHours,
     };
 
-    totalQuotaHours += quotaHours;
+    totalQuotaHours += periodQuotaHours;
+    totalAnnualQuotaHours += annualQuotaHours;
+    totalMonthlyQuotaHours += monthlyQuotaHours;
     totalUsedHours += usedHours;
     totalPendingHours += pendingHours;
   }
@@ -446,6 +625,8 @@ export function computeEmployeeLeaveSummary(
     tier,
     byType,
     totalQuotaHours: Number(totalQuotaHours.toFixed(2)),
+    totalAnnualQuotaHours: Number(totalAnnualQuotaHours.toFixed(2)),
+    totalMonthlyQuotaHours: Number(totalMonthlyQuotaHours.toFixed(2)),
     totalUsedHours: Number(totalUsedHours.toFixed(2)),
     totalPendingHours: Number(totalPendingHours.toFixed(2)),
     totalRemainingHours,
