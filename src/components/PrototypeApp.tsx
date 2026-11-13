@@ -1299,7 +1299,7 @@ export default function PrototypeApp({ initialUser }: Props) {
                   </p>
 
                   {/* KPI Plaque */}
-                  <div className="cert-kpi-plaque">
+                  <div className="cert-kpi-plaque" style={{ marginBottom: 0 }}>
                     <div className="plaque-item">
                       KPI Achievement: <strong>{sc}%</strong>
                     </div>
@@ -1311,37 +1311,6 @@ export default function PrototypeApp({ initialUser }: Props) {
                     <div className="plaque-item">
                       Evaluation Target: <strong>{certTarget} units</strong>
                     </div>
-                  </div>
-
-                  {/* Footer: Official Gold Seal (Signatories kept empty until configured) */}
-                  <div className="cert-footer-layout">
-                    {/* Left Signature (kept empty until configured) */}
-                    <div className="sig-column"></div>
-
-                    {/* Center Gold Seal */}
-                    <div className="seal-column">
-                      <div className="gold-medallion">
-                        <div className="medallion-inner">
-                          <div className="medallion-stars">★★★★★</div>
-                          <div className="medallion-text">OFFICIAL<br />SEAL</div>
-                          <div className="medallion-seal-tag">VSI PULSE</div>
-                        </div>
-                      </div>
-                      <div className="seal-ribbon-tail left"></div>
-                      <div className="seal-ribbon-tail right"></div>
-                    </div>
-
-                    {/* Right Signature (kept empty until configured) */}
-                    <div className="sig-column"></div>
-                  </div>
-
-                  {/* Certificate Serial & Date */}
-                  <div className="cert-meta-footnote">
-                    <span>Certificate ID: VSI-PULSE-2026-00{e.id}</span>
-                    <span>•</span>
-                    <span>Issued: {certDate}</span>
-                    <span>•</span>
-                    <span>Digitally Verified Performance Record</span>
                   </div>
                 </div>
               </div>
